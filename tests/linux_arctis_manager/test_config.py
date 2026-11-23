@@ -45,8 +45,8 @@ def test_config_parse():
     assert len(config.status.response_mapping[2].__dict__.keys()) == 15
     assert hasattr(config.status.response_mapping[2], 'headset_power_status')
     assert getattr(config.status.response_mapping[2], 'headset_power_status') == 0x0f
-    assert len(config.status.representation.keys()) == 5
-    assert list(config.status.representation.keys()) == ['headset', 'mic', 'gamedac', 'bluetooth', 'wireless']
+    assert len(config.status.representation.keys()) == 6
+    assert list(config.status.representation.keys()) == ['headset', 'mic', 'gamedac', 'chatmix', 'bluetooth', 'wireless']
     assert config.status.representation['gamedac'] == ['station_volume', 'charge_slot_battery_charge']
 
     assert len(config.status_parse) == 17

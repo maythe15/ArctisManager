@@ -93,6 +93,9 @@ device:
       gamedac:
         - station_volume
         - charge_slot_battery_charge
+      chatmix:
+        - media_mix
+        - chat_mix
       bluetooth:
         - bluetooth_powerup_state
         - bluetooth_power_status
