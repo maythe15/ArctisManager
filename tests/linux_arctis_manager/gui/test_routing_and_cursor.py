@@ -45,6 +45,7 @@ class FakeBus:
         self.loop = None
         self.disconnected = False
         self.moves: list[tuple[int, str]] = []
+        self.mix_groups: list[tuple[str, str]] = []
         FakeBus.instances.append(self)
 
     async def connect(self):
@@ -64,6 +65,11 @@ class FakeBus:
         # A real dbus-next bus only works on the loop that created it.
         assert asyncio.get_running_loop() is self.loop
         self.moves.append((stream_index, endpoint_node_name))
+        return True
+
+    async def call_set_mix_group(self, channel, group):
+        assert asyncio.get_running_loop() is self.loop
+        self.mix_groups.append((channel, group))
         return True
 
     async def call_get_settings(self):
@@ -100,6 +106,21 @@ def test_move_application_route_uses_a_bus_bound_to_its_own_loop(monkeypatch):
     move_buses = [bus for bus in FakeBus.instances if bus.moves]
     assert [bus.moves for bus in move_buses] == [[(55, 'Arctis_Chat')], [(56, 'Arctis_Game')]]
     assert all(bus.disconnected for bus in move_buses)
+
+
+def test_set_mix_group_uses_a_bus_bound_to_its_own_loop(monkeypatch):
+    _app()
+    FakeBus.instances = []
+    monkeypatch.setattr(dbus_wrapper_module, 'MessageBus', FakeBus)
+
+    wrapper = DbusWrapper()
+    settings_received = Event()
+    wrapper.sig_settings.connect(lambda _: settings_received.set(), Qt.ConnectionType.DirectConnection)
+
+    wrapper.set_mix_group('aux', 'chat')
+    assert settings_received.wait(5)
+
+    assert [bus.mix_groups for bus in FakeBus.instances if bus.mix_groups] == [[('aux', 'chat')]]
 
 
 def test_route_move_feedback_survives_settings_refresh():

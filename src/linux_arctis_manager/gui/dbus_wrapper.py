@@ -214,10 +214,9 @@ class DbusWrapper(QObject):
         self.request_settings()
 
     def set_mix_group(self, channel: str, group: str) -> None:
-        request_thread = Thread(target=lambda: asyncio.run(self._set_mix_group_async(channel, group)))
-        request_thread.start()
+        self._run_in_thread('SetMixGroup', lambda: self._set_mix_group_async(channel, group))
 
     async def _set_mix_group_async(self, channel: str, group: str):
-        iface = await self.settings_iface()
-        await iface.call_set_mix_group(channel, group) # type: ignore
+        async with self._settings_iface() as iface:
+            await iface.call_set_mix_group(channel, group) # type: ignore
         self.request_settings()
