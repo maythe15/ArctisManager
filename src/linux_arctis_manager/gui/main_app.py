@@ -8,7 +8,8 @@ from PySide6.QtWidgets import (QApplication, QComboBox, QFrame, QGridLayout,
                                QScrollArea, QSizePolicy, QSlider,
                                QStackedWidget, QVBoxLayout, QWidget)
 
-from linux_arctis_manager.audio_endpoints import VIRTUAL_AUDIO_ENDPOINTS
+from linux_arctis_manager.audio_endpoints import (VIRTUAL_AUDIO_ENDPOINTS,
+                                                  VIRTUAL_SINK_ENDPOINTS)
 from linux_arctis_manager.gui.base_app import QBaseDesktopApp
 from linux_arctis_manager.gui.main_app_proto_widget import QMainAppProtoWidget
 from linux_arctis_manager.gui.status_widget import QStatusWidget
@@ -26,6 +27,7 @@ from linux_arctis_manager.gui.view_models import (
     device_control_snapshot,
     endpoint_route_map,
     header_context_summary,
+    mix_group_assignments,
     mixer_levels,
     mixer_overview_summary,
     profile_app_context_summary,
@@ -320,6 +322,7 @@ class QMainApp(QBaseDesktopApp):
 
         self.mixer_overview_value_labels: dict[str, QLabel] = {}
         self.mixer_overview_detail_labels: dict[str, QLabel] = {}
+        self.mix_group_buttons: dict[tuple[str, str], QPushButton] = {}
         for index, (key, title) in enumerate([
             ('channels', 'Channel State'),
             ('media', 'Media Mix Group'),
@@ -336,6 +339,9 @@ class QMainApp(QBaseDesktopApp):
             detail_label = self._muted_label('Waiting for mixer metadata.')
             card.layout().addWidget(detail_label)
             self.mixer_overview_detail_labels[key] = detail_label
+
+            if key in ('media', 'chat'):
+                card.layout().addWidget(self._mix_group_selector(key))
 
             overview_grid.addWidget(card, index // 2, index % 2)
 
@@ -406,6 +412,50 @@ class QMainApp(QBaseDesktopApp):
         layout.addWidget(balance_card)
 
         return page
+
+    def _mix_group_selector(self, group: str) -> QWidget:
+        selector = QWidget()
+        selector_layout = QHBoxLayout()
+        selector_layout.setContentsMargins(0, 0, 0, 0)
+        selector_layout.setSpacing(6)
+        selector.setLayout(selector_layout)
+
+        side = 'media' if group == 'media' else 'chat'
+        for endpoint in VIRTUAL_SINK_ENDPOINTS:
+            button = QPushButton(endpoint.label)
+            button.setObjectName('mixGroupChip')
+            button.setCheckable(True)
+            button.setChecked(endpoint.mix_group == group)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setToolTip(f'Move {endpoint.label} to the {side} side of ChatMix.')
+            button.clicked.connect(
+                lambda _, channel=endpoint.key, target=group: self._on_mix_group_clicked(channel, target)
+            )
+            selector_layout.addWidget(button)
+            self.mix_group_buttons[(group, endpoint.key)] = button
+
+        selector_layout.addStretch(1)
+
+        return selector
+
+    def _on_mix_group_clicked(self, channel: str, group: str) -> None:
+        assignments = mix_group_assignments(self.settings)
+        if assignments.get(channel) == group:
+            # Already on this side; a channel always belongs to exactly one side.
+            self._refresh_mix_group_buttons(self.settings)
+            return
+
+        assignments[channel] = group  # pyright: ignore[reportArgumentType]
+        if self.dbus_wrapper:
+            self.dbus_wrapper.set_mix_group(channel, group)
+
+        # Update the view immediately; the daemon's SettingsChanged signal confirms it.
+        self.on_settings_received({**self.settings, 'mix_groups': assignments})
+
+    def _refresh_mix_group_buttons(self, settings: dict) -> None:
+        assignments = mix_group_assignments(settings)
+        for (group, channel), button in self.mix_group_buttons.items():
+            button.setChecked(assignments.get(channel) == group)
 
     def _build_device_page(self) -> QWidget:
         page, layout = self._scroll_page()
@@ -1017,7 +1067,7 @@ class QMainApp(QBaseDesktopApp):
                 detail_label.setText(item['detail'])
 
     def _refresh_mixer_status(self, status: dict) -> None:
-        for node_name, level in mixer_levels(status).items():
+        for node_name, level in mixer_levels(status, self.settings).items():
             slider = self.mixer_sliders.get(node_name)
             if not slider:
                 continue
@@ -1026,9 +1076,16 @@ class QMainApp(QBaseDesktopApp):
             if value_label:
                 value_label.setText(f'{level}%')
 
-        balance = chatmix_balance_summary(status)
+        balance = chatmix_balance_summary(status, self.settings)
         self.chatmix_balance_value_label.setText(str(balance['value']))
         self.chatmix_balance_detail_label.setText(str(balance['detail']))
+        for meter, label_key in (
+            (self.chatmix_media_balance_slider, 'media_label'),
+            (self.chatmix_chat_balance_slider, 'chat_label'),
+        ):
+            meter_label = meter.findChild(QLabel)
+            if meter_label and label_key in balance:
+                meter_label.setText(str(balance[label_key]))
         media_slider = self.chatmix_media_balance_slider.findChild(QSlider)
         chat_slider = self.chatmix_chat_balance_slider.findChild(QSlider)
         if media_slider:
@@ -1045,9 +1102,11 @@ class QMainApp(QBaseDesktopApp):
                 self._set_state_label(value_label, summary[f'{key}_value'])
             if detail_label:
                 detail_label.setText(summary[f'{key}_detail'])
+        self._refresh_mix_group_buttons(settings)
 
     def _refresh_mixer_settings(self, settings: dict) -> None:
         self._refresh_mixer_overview(settings)
+        self._refresh_mixer_status(self.status)
         endpoint_states = settings.get('audio_endpoints', [])
         if not isinstance(endpoint_states, list):
             endpoint_states = []
@@ -1440,6 +1499,23 @@ class QMainApp(QBaseDesktopApp):
                 color: #7f92a5;
                 padding: 8px 10px;
                 text-align: left;
+            }
+            #mixGroupChip {
+                background: #0f1419;
+                border: 1px solid #34465a;
+                border-radius: 12px;
+                color: #9fb1c4;
+                font-size: 12px;
+                font-weight: 700;
+                padding: 4px 12px;
+            }
+            #mixGroupChip:hover {
+                border-color: #5fb3f3;
+            }
+            #mixGroupChip:checked {
+                background: #22425f;
+                border-color: #5fb3f3;
+                color: #ffffff;
             }
             #primaryAction, #secondaryAction, #profileNameInput, #profileCombo, #routeCombo {
                 border-radius: 8px;

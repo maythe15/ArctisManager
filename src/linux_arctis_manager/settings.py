@@ -3,6 +3,9 @@ from typing import Any
 
 from ruamel.yaml import YAML
 
+from linux_arctis_manager.audio_endpoints import (ASSIGNABLE_MIX_GROUPS,
+                                                  DEFAULT_MIX_GROUPS, MixGroup,
+                                                  normalize_mix_groups)
 from linux_arctis_manager.config import ConfigSetting, SettingType
 from linux_arctis_manager.constants import SETTINGS_FOLDER
 from linux_arctis_manager.utils import JsonSerializable, ObservableDict
@@ -61,7 +64,9 @@ class DeviceSettings(JsonSerializable):
 
 
 class GeneralSettings(JsonSerializable):
-    _js_exclude_fields = ['settings_config']
+    # mix_groups has a dedicated Mixer UI and D-Bus method, so it is kept out of
+    # the generic general settings payload rendered by the Settings page.
+    _js_exclude_fields = ['settings_config', 'mix_groups']
 
     # Automatically redirect on Media channel
     redirect_audio_on_connect: bool = False
@@ -69,6 +74,9 @@ class GeneralSettings(JsonSerializable):
     # When disconnecting, redirect to this device
     redirect_audio_on_disconnect: bool = False
     redirect_audio_on_disconnect_device: str|None = None
+
+    # ChatMix side (media / chat) followed by each output channel, keyed by endpoint key
+    mix_groups: dict[str, MixGroup]
 
     settings_config: list[ConfigSetting] = [
         ConfigSetting('redirect_audio_on_connect', SettingType.TOGGLE, False, values={ 'on': True, 'off': False, 'off_label': 'off', 'on_label': 'on' }),
@@ -81,6 +89,16 @@ class GeneralSettings(JsonSerializable):
             if key in self.__class__.__annotations__:
                 setattr(self, key, value)
 
+        self.mix_groups = normalize_mix_groups(kwargs.get('mix_groups'))
+
+    def set_mix_group(self, channel: str, group: str) -> bool:
+        if channel not in DEFAULT_MIX_GROUPS or group not in ASSIGNABLE_MIX_GROUPS:
+            return False
+
+        self.mix_groups = normalize_mix_groups({**self.mix_groups, channel: group})
+
+        return True
+
     @staticmethod
     def read_from_file() -> 'GeneralSettings':
         settings_file = SETTINGS_FOLDER / 'general_settings.yaml'
@@ -90,7 +108,7 @@ class GeneralSettings(JsonSerializable):
 
         yaml = YAML(typ='safe')
 
-        return GeneralSettings(**yaml.load(settings_file))
+        return GeneralSettings(**(yaml.load(settings_file) or {}))
     
     def write_to_file(self):
         settings_file = SETTINGS_FOLDER / 'general_settings.yaml'

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## Added
+- Configurable ChatMix groups: choose which output channels (Game, Chat, Media, Aux) follow the media or chat side of ChatMix from the Mixer page's Media Mix Group and Chat Mix Group cards. Saved as `mix_groups` in `general_settings.yaml` and exposed over D-Bus via `SetMixGroup` and the `mix_groups` settings field.
+
 ## [2.4.1]
 
 ## Added

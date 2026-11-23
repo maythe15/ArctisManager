@@ -14,6 +14,7 @@ from linux_arctis_manager.gui.view_models import (
     endpoint_route_map,
     flatten_status_values,
     header_context_summary,
+    mix_group_assignments,
     mixer_levels,
     mixer_overview_summary,
     output_endpoint_readiness_detail,
@@ -525,6 +526,63 @@ def test_mixer_levels_map_media_and_chat_mix_to_endpoint_groups():
     }
 
 
+def test_mixer_levels_follow_custom_mix_groups():
+    status = {
+        'gamedac': {
+            'media_mix': {'value': 35, 'type': 'percentage'},
+            'chat_mix': {'value': 65, 'type': 'percentage'},
+        },
+    }
+
+    assert mixer_levels(status, {'mix_groups': {'aux': 'chat', 'game': 'chat'}}) == {
+        'Arctis_Game': 65,
+        'Arctis_Chat': 65,
+        'Arctis_Media': 35,
+        'Arctis_Aux': 65,
+        'Arctis_Microphone': 0,
+    }
+
+
+def test_mix_group_assignments_fall_back_to_endpoint_metadata():
+    assert mix_group_assignments({
+        'audio_endpoints': [
+            {'node_name': 'Arctis_Aux', 'mix_group': 'chat'},
+            {'node_name': 'Arctis_Microphone', 'mix_group': 'microphone'},
+        ],
+    }) == {
+        'game': 'media',
+        'chat': 'chat',
+        'media': 'media',
+        'aux': 'chat',
+    }
+    assert mix_group_assignments({'mix_groups': {'chat': 'media'}})['chat'] == 'media'
+
+
+def test_mixer_overview_summary_reports_custom_and_empty_mix_groups():
+    summary = mixer_overview_summary({
+        'mix_groups': {'game': 'media', 'chat': 'media', 'media': 'media', 'aux': 'media'},
+    })
+
+    assert summary['media_value'] == 'Game / Chat / Media / Aux'
+    assert summary['media_detail'] == 'Media mix drives Game, Chat, Media, and Aux channels.'
+    assert summary['chat_value'] == 'No channels'
+    assert summary['chat_detail'] == 'No channels follow the chat side of ChatMix.'
+
+
+def test_chatmix_balance_summary_follows_custom_mix_groups():
+    balance = chatmix_balance_summary({
+        'gamedac': {
+            'media_mix': {'value': 35, 'type': 'percentage'},
+            'chat_mix': {'value': 65, 'type': 'percentage'},
+        },
+    }, {'mix_groups': {'aux': 'chat'}})
+
+    assert balance['value'] == 'Game/Media 35% / Chat/Aux 65%'
+    assert balance['detail'] == 'Game and Media follow media mix; Chat and Aux follow chat mix.'
+    assert balance['media_label'] == 'Game / Media'
+    assert balance['chat_label'] == 'Chat / Aux'
+
+
 def test_mixer_overview_summary_reports_channel_state_and_mix_groups():
     assert mixer_overview_summary({
         'audio_endpoints': [
@@ -575,7 +633,7 @@ def test_mixer_overview_summary_reports_channel_state_and_mix_groups():
         'media_value': 'Game / Media / Aux',
         'media_detail': 'Media mix drives Game, Media, and Aux channels.',
         'chat_value': 'Chat',
-        'chat_detail': 'Chat mix drives voice chat separately when the headset reports ChatMix.',
+        'chat_detail': 'Chat mix drives the Chat channel separately when the headset reports ChatMix.',
     }
 
 
@@ -586,7 +644,7 @@ def test_mixer_overview_summary_handles_missing_endpoint_metadata():
         'media_value': 'Game / Media / Aux',
         'media_detail': 'Media mix drives Game, Media, and Aux channels.',
         'chat_value': 'Chat',
-        'chat_detail': 'Chat mix drives voice chat separately when the headset reports ChatMix.',
+        'chat_detail': 'Chat mix drives the Chat channel separately when the headset reports ChatMix.',
     }
 
 
@@ -601,6 +659,8 @@ def test_chatmix_balance_summary_reports_media_and_chat_groups():
         'detail': 'Game, Media, and Aux follow media mix; Chat follows chat mix.',
         'media_level': 35,
         'chat_level': 65,
+        'media_label': 'Game / Media / Aux',
+        'chat_label': 'Chat',
     }
 
 
@@ -610,6 +670,8 @@ def test_chatmix_balance_summary_handles_missing_mix_status():
         'detail': 'Waiting for media_mix and chat_mix status values from the headset or GameDAC.',
         'media_level': 100,
         'chat_level': 100,
+        'media_label': 'Game / Media / Aux',
+        'chat_label': 'Chat',
     }
 
 

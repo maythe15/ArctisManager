@@ -71,6 +71,7 @@ lam-gui
 - Battery, mic mute, and other supported status fields update when the hardware reports them.
 - Mixer shows Game, Chat, Media, Aux, and planned Microphone rows.
 - ChatMix balance is readable and changes when the hardware reports new values.
+- Clicking Aux in the Mixer's Chat Mix Group card moves it to the chat side: turning the ChatMix dial now changes Aux together with Chat, the choice survives a `lam-daemon` restart, and clicking Aux in the Media Mix Group card moves it back.
 - Routing shows virtual endpoint readiness.
 - Routing shows active playback apps when audio is playing.
 - Moving an active app stream to Game, Chat, Media, or Aux updates the route map and keeps audio audible.

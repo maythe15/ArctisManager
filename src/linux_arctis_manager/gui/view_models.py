@@ -1,4 +1,8 @@
-from linux_arctis_manager.audio_endpoints import VIRTUAL_AUDIO_ENDPOINTS
+from linux_arctis_manager.audio_endpoints import (ASSIGNABLE_MIX_GROUPS,
+                                                  VIRTUAL_AUDIO_ENDPOINTS,
+                                                  VIRTUAL_SINK_ENDPOINTS,
+                                                  MixGroup,
+                                                  normalize_mix_groups)
 
 StatusPayload = dict[str, dict[str, dict[str, str | int]]]
 
@@ -714,19 +718,62 @@ def device_control_snapshot(settings: dict) -> list[dict[str, str]]:
     return snapshots
 
 
-def mixer_levels(status: StatusPayload | dict) -> dict[str, int]:
+def mix_group_assignments(settings: dict | None) -> dict[str, MixGroup]:
+    """Return the ChatMix side (media / chat) each output channel follows, keyed by endpoint key."""
+    settings = settings or {}
+    mix_groups = settings.get('mix_groups')
+    if isinstance(mix_groups, dict):
+        return normalize_mix_groups(mix_groups)
+
+    # Older daemons only report the group per endpoint.
+    endpoint_states = settings.get('audio_endpoints', [])
+    keys_by_node = {endpoint.node_name: endpoint.key for endpoint in VIRTUAL_SINK_ENDPOINTS}
+    reported: dict[str, object] = {}
+    if isinstance(endpoint_states, list):
+        for state in endpoint_states:
+            if isinstance(state, dict) and state.get('node_name') in keys_by_node:
+                reported[keys_by_node[state['node_name']]] = state.get('mix_group')
+
+    return normalize_mix_groups(reported)
+
+
+def mix_group_labels(settings: dict | None) -> dict[MixGroup, list[str]]:
+    assignments = mix_group_assignments(settings)
+    labels: dict[MixGroup, list[str]] = {group: [] for group in ASSIGNABLE_MIX_GROUPS}
+    for endpoint in VIRTUAL_SINK_ENDPOINTS:
+        labels[assignments[endpoint.key]].append(endpoint.label)
+
+    return labels
+
+
+def _join_labels(labels: list[str]) -> str:
+    if len(labels) <= 2:
+        return ' and '.join(labels)
+
+    return f"{', '.join(labels[:-1])}, and {labels[-1]}"
+
+
+def _channel_phrase(labels: list[str]) -> str:
+    if len(labels) == 1:
+        return f'the {labels[0]} channel'
+
+    return f'{_join_labels(labels)} channels'
+
+
+def mixer_levels(status: StatusPayload | dict, settings: dict | None = None) -> dict[str, int]:
     values = flatten_status_values(status)
-    media_mix = safe_percentage(values.get('media_mix'), 100)
-    chat_mix = safe_percentage(values.get('chat_mix'), 100)
+    levels = {
+        'media': safe_percentage(values.get('media_mix'), 100),
+        'chat': safe_percentage(values.get('chat_mix'), 100),
+    }
+    assignments = mix_group_assignments(settings)
 
     result: dict[str, int] = {}
     for endpoint in VIRTUAL_AUDIO_ENDPOINTS:
         if not endpoint.implemented:
             result[endpoint.node_name] = 0
-        elif endpoint.mix_group == 'chat':
-            result[endpoint.node_name] = chat_mix
-        elif endpoint.mix_group == 'media':
-            result[endpoint.node_name] = media_mix
+        else:
+            result[endpoint.node_name] = levels[assignments.get(endpoint.key, 'media')]
 
     return result
 
@@ -773,33 +820,37 @@ def mixer_overview_summary(settings: dict) -> dict[str, str]:
         channel_value = 'Waiting'
         channel_detail = output_endpoint_readiness_detail(settings)
 
-    media_labels = [
-        endpoint.label
-        for endpoint in VIRTUAL_AUDIO_ENDPOINTS
-        if endpoint.kind == 'sink' and endpoint.mix_group == 'media'
-    ]
-    chat_labels = [
-        endpoint.label
-        for endpoint in VIRTUAL_AUDIO_ENDPOINTS
-        if endpoint.kind == 'sink' and endpoint.mix_group == 'chat'
-    ]
+    group_labels = mix_group_labels(settings)
+    media_labels = group_labels['media']
+    chat_labels = group_labels['chat']
 
     return {
         'channels_value': channel_value,
         'channels_detail': channel_detail,
-        'media_value': ' / '.join(media_labels),
-        'media_detail': 'Media mix drives Game, Media, and Aux channels.',
-        'chat_value': ' / '.join(chat_labels),
-        'chat_detail': 'Chat mix drives voice chat separately when the headset reports ChatMix.',
+        'media_value': ' / '.join(media_labels) or 'No channels',
+        'media_detail': (
+            f'Media mix drives {_channel_phrase(media_labels)}.'
+            if media_labels else 'No channels follow the media side of ChatMix.'
+        ),
+        'chat_value': ' / '.join(chat_labels) or 'No channels',
+        'chat_detail': (
+            f'Chat mix drives {_channel_phrase(chat_labels)} separately when the headset reports ChatMix.'
+            if chat_labels else 'No channels follow the chat side of ChatMix.'
+        ),
     }
 
 
-def chatmix_balance_summary(status: StatusPayload | dict) -> dict[str, str | int]:
+def chatmix_balance_summary(status: StatusPayload | dict, settings: dict | None = None) -> dict[str, str | int]:
     values = flatten_status_values(status)
     has_media_mix = 'media_mix' in values
     has_chat_mix = 'chat_mix' in values
     media_mix = safe_percentage(values.get('media_mix'), 100)
     chat_mix = safe_percentage(values.get('chat_mix'), 100)
+    group_labels = mix_group_labels(settings)
+    media_names = group_labels['media']
+    chat_names = group_labels['chat']
+    media_short = '/'.join(media_names) or 'Media side'
+    chat_short = '/'.join(chat_names) or 'Chat side'
 
     if not has_media_mix and not has_chat_mix:
         return {
@@ -807,26 +858,37 @@ def chatmix_balance_summary(status: StatusPayload | dict) -> dict[str, str | int
             'detail': 'Waiting for media_mix and chat_mix status values from the headset or GameDAC.',
             'media_level': media_mix,
             'chat_level': chat_mix,
+            'media_label': ' / '.join(media_names) or 'No channels',
+            'chat_label': ' / '.join(chat_names) or 'No channels',
         }
 
+    def follows(names: list[str], side: str) -> str:
+        if not names:
+            return f'no channels follow {side} mix'
+        verb = 'follows' if len(names) == 1 else 'follow'
+        return f'{_join_labels(names)} {verb} {side} mix'
+
     if has_media_mix and has_chat_mix:
-        detail = 'Game, Media, and Aux follow media mix; Chat follows chat mix.'
+        detail = f"{follows(media_names, 'media')}; {follows(chat_names, 'chat')}."
+        detail = detail[0].upper() + detail[1:]
     elif has_media_mix:
-        detail = 'Chat mix is not reported yet; Chat is shown at the default level.'
+        detail = f"Chat mix is not reported yet; {_join_labels(chat_names) or 'the chat side'} {'is' if len(chat_names) == 1 else 'are'} shown at the default level."
     else:
-        detail = 'Media mix is not reported yet; Game, Media, and Aux are shown at the default level.'
+        detail = f"Media mix is not reported yet; {_join_labels(media_names) or 'the media side'} {'is' if len(media_names) == 1 else 'are'} shown at the default level."
 
     return {
-        'value': f'Game/Media/Aux {media_mix}% / Chat {chat_mix}%',
+        'value': f'{media_short} {media_mix}% / {chat_short} {chat_mix}%',
         'detail': detail,
         'media_level': media_mix,
         'chat_level': chat_mix,
+        'media_label': ' / '.join(media_names) or 'No channels',
+        'chat_label': ' / '.join(chat_names) or 'No channels',
     }
 
 
 def dashboard_control_surface_summary(status: StatusPayload | dict, settings: dict | None = None) -> list[dict[str, str]]:
     settings = settings or {}
-    balance = chatmix_balance_summary(status)
+    balance = chatmix_balance_summary(status, settings)
     if balance['value'] == 'Waiting':
         mix_state = 'Waiting'
         mix_detail = str(balance['detail'])
@@ -920,6 +982,7 @@ def demo_settings() -> dict:
             'available': ['Default', 'Late Night', 'Footsteps'],
             'active': 'Late Night',
         },
+        'mix_groups': normalize_mix_groups(None),
         'audio_endpoints': [
             {
                 'node_name': endpoint.node_name,

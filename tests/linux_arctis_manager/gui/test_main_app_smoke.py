@@ -7,7 +7,7 @@ import pytest
 
 pytest.importorskip('PySide6')
 
-from PySide6.QtWidgets import QApplication, QSlider
+from PySide6.QtWidgets import QApplication, QLabel, QSlider
 
 from linux_arctis_manager.gui.main_app import QMainApp
 
@@ -60,7 +60,7 @@ def test_demo_main_window_opens_with_dashboard_and_mixer_content():
     assert window_app.mixer_overview_value_labels['media'].text() == 'Game / Media / Aux'
     assert window_app.mixer_overview_detail_labels['media'].text() == 'Media mix drives Game, Media, and Aux channels.'
     assert window_app.mixer_overview_value_labels['chat'].text() == 'Chat'
-    assert window_app.mixer_overview_detail_labels['chat'].text() == 'Chat mix drives voice chat separately when the headset reports ChatMix.'
+    assert window_app.mixer_overview_detail_labels['chat'].text() == 'Chat mix drives the Chat channel separately when the headset reports ChatMix.'
     assert window_app.mixer_sliders['Arctis_Game'].value() == 70
     assert window_app.mixer_value_labels['Arctis_Game'].text() == '70%'
     assert window_app.mixer_state_labels['Arctis_Game'].text() == 'Ready / Default'
@@ -79,6 +79,9 @@ def test_demo_main_window_opens_with_dashboard_and_mixer_content():
     assert window_app.chatmix_balance_detail_label.text() == 'Game, Media, and Aux follow media mix; Chat follows chat mix.'
     assert window_app.chatmix_media_balance_slider.findChild(QSlider).value() == 70
     assert window_app.chatmix_chat_balance_slider.findChild(QSlider).value() == 55
+    assert window_app.mix_group_buttons[('media', 'aux')].isChecked()
+    assert not window_app.mix_group_buttons[('chat', 'aux')].isChecked()
+    assert window_app.mix_group_buttons[('chat', 'chat')].isChecked()
 
     window_app.switch_panel('routing')
     app.processEvents()
@@ -100,6 +103,41 @@ def test_demo_main_window_opens_with_dashboard_and_mixer_content():
     assert window_app.route_map_state_labels['Arctis_Aux'].text() == 'Missing'
     assert window_app.route_map_state_labels['Arctis_Microphone'].text() == 'Planned'
     assert not window_app.assign_route_button.isEnabled()
+
+    window_app.sig_stop()
+
+
+def test_mixer_mix_group_chips_move_channels_between_chatmix_sides():
+    app = QApplication.instance() or QApplication([])
+    window_app = QMainApp(app, logging.CRITICAL, demo_mode=True)
+    window_app.switch_panel('mixer')
+    app.processEvents()
+
+    window_app.mix_group_buttons[('chat', 'aux')].click()
+    app.processEvents()
+
+    assert window_app.settings['mix_groups']['aux'] == 'chat'
+    assert window_app.mix_group_buttons[('chat', 'aux')].isChecked()
+    assert not window_app.mix_group_buttons[('media', 'aux')].isChecked()
+    assert window_app.mixer_overview_value_labels['media'].text() == 'Game / Media'
+    assert window_app.mixer_overview_value_labels['chat'].text() == 'Chat / Aux'
+    assert window_app.mixer_sliders['Arctis_Aux'].value() == 55
+    assert window_app.chatmix_balance_value_label.text() == 'Game/Media 70% / Chat/Aux 55%'
+    assert window_app.chatmix_chat_balance_slider.findChild(QLabel).text() == 'Chat / Aux'
+
+    # Clicking a channel that is already on this side keeps it there.
+    window_app.mix_group_buttons[('chat', 'aux')].click()
+    app.processEvents()
+
+    assert window_app.settings['mix_groups']['aux'] == 'chat'
+    assert window_app.mix_group_buttons[('chat', 'aux')].isChecked()
+
+    window_app.mix_group_buttons[('media', 'aux')].click()
+    app.processEvents()
+
+    assert window_app.settings['mix_groups']['aux'] == 'media'
+    assert window_app.mixer_sliders['Arctis_Aux'].value() == 70
+    assert window_app.mixer_overview_value_labels['chat'].text() == 'Chat'
 
     window_app.sig_stop()
 
