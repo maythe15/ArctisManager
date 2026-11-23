@@ -113,3 +113,99 @@ def test_move_application_route_rejects_unknown_endpoint():
 
     assert manager.move_application_route(55, 'Not_An_Endpoint') is False
     assert manager.pulse.moved_stream is None
+
+
+class FakeModule:
+    def __init__(self, index: int, name: str, argument: str):
+        self.index = index
+        self.name = name
+        self.argument = argument
+
+
+class FakeModulePulse:
+    """Simulates the PulseAudio module and sink state relevant to virtual sinks."""
+
+    def __init__(self, modules: list[FakeModule] | None = None):
+        self.modules = list(modules or [])
+        self.loaded: list[tuple[str, str]] = []
+        self.unloaded: list[int] = []
+
+    def module_list(self):
+        return list(self.modules)
+
+    def module_load(self, name: str, args: str):
+        self.loaded.append((name, args))
+        self.modules.append(FakeModule(100 + len(self.loaded), name, args))
+
+    def module_unload(self, index: int):
+        self.unloaded.append(index)
+        self.modules = [m for m in self.modules if m.index != index]
+
+    def sink_list(self):
+        return [
+            FakeSink(arg.split('=', 1)[1], '', module.index)
+            for module in self.modules
+            if module.name in ('module-null-sink', 'module-remap-sink')
+            for arg in module.argument.split()
+            if arg.startswith('sink_name=')
+        ]
+
+
+def make_module_manager(pulse: FakeModulePulse) -> PulseAudioManager:
+    manager = object.__new__(PulseAudioManager)
+    manager.pulse = pulse
+    manager.logger = logging.getLogger('test')
+    return manager
+
+
+def test_create_virtual_sink_loads_a_single_remap_sink():
+    pulse = FakeModulePulse()
+    manager = make_module_manager(pulse)
+
+    manager.create_virtual_sink(PULSE_GAME_NODE_NAME, 'Arctis Nova Game', 'alsa_output.headset')
+
+    assert pulse.loaded == [(
+        'module-remap-sink',
+        f'sink_name={PULSE_GAME_NODE_NAME} '
+        'sink_properties=node.description="Arctis\\ Nova\\ Game" '
+        'master=alsa_output.headset',
+    )]
+
+
+def test_create_virtual_sink_keeps_existing_remap_sink():
+    pulse = FakeModulePulse([
+        FakeModule(1, 'module-remap-sink', f'sink_name={PULSE_GAME_NODE_NAME} master=alsa_output.headset'),
+    ])
+    manager = make_module_manager(pulse)
+
+    manager.create_virtual_sink(PULSE_GAME_NODE_NAME, 'Game', 'alsa_output.headset')
+
+    assert pulse.loaded == []
+    assert pulse.unloaded == []
+
+
+def test_create_virtual_sink_replaces_legacy_null_sink_and_loopback():
+    pulse = FakeModulePulse([
+        FakeModule(1, 'module-null-sink', f'sink_name={PULSE_GAME_NODE_NAME} sink_properties=node.description="Game"'),
+        FakeModule(2, 'module-loopback', f'source={PULSE_GAME_NODE_NAME}.monitor sink=alsa_output.headset latency_msec=0'),
+        FakeModule(3, 'module-null-sink', f'sink_name={PULSE_CHAT_NODE_NAME}'),
+    ])
+    manager = make_module_manager(pulse)
+
+    manager.create_virtual_sink(PULSE_GAME_NODE_NAME, 'Game', 'alsa_output.headset')
+
+    assert sorted(pulse.unloaded) == [1, 2]
+    assert [name for name, _ in pulse.loaded] == ['module-remap-sink']
+    assert {m.name for m in pulse.modules} == {'module-null-sink', 'module-remap-sink'}
+
+
+def test_remove_virtual_sink_unloads_remap_sink():
+    pulse = FakeModulePulse([
+        FakeModule(1, 'module-remap-sink', f'sink_name={PULSE_GAME_NODE_NAME} master=alsa_output.headset'),
+        FakeModule(2, 'module-remap-sink', f'sink_name={PULSE_CHAT_NODE_NAME} master=alsa_output.headset'),
+    ])
+    manager = make_module_manager(pulse)
+
+    manager.remove_virtual_sink(PULSE_GAME_NODE_NAME)
+
+    assert pulse.unloaded == [1]
