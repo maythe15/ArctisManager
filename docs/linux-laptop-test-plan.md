@@ -100,6 +100,16 @@ pactl list short sink-inputs
 
 Expected result: active playback streams can move between ready Game, Chat, Media, and Aux outputs. Microphone remains marked planned.
 
+### Virtual output links
+
+The virtual outputs should each be a single node linked straight to the headset (this needs `pw-link`, part of PipeWire's tools package: `pipewire-bin` on Debian/Ubuntu, `pipewire-utils` on Fedora, `pipewire` on Arch).
+
+1. Run `pw-link -l | grep -A2 Arctis_`. Each of `Arctis_Game`, `Arctis_Chat`, `Arctis_Media` and `Arctis_Aux` should show `monitor_FL`/`monitor_FR` linked to the headset sink's `playback_FL`/`playback_FR`.
+2. In qpwgraph (or Helvum), with an app playing to an output, the path app → `Arctis_<output>` → headset should be one unbroken chain with no separate `output_*` node.
+3. With audio playing into Game and Chat, turn the ChatMix dial fully each way. The volume of each side must actually change in the headset, and muting an output with `pactl set-sink-mute Arctis_Game 1` must silence it. If the dial moves the sliders but the sound does not change, `monitor.channel-volumes` is not taking effect: report the PipeWire version.
+4. Unplug and replug the headset or dongle, then repeat step 1. The links should be back.
+5. Optional fallback check: temporarily make `pw-link` unavailable to the daemon (for example run `lam-daemon` with a `PATH` that excludes it). The outputs should be created as remap sinks and still play audio.
+
 ## 7. Collect Debug Info
 
 If something fails, collect:

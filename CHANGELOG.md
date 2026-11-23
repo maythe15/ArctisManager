@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configurable ChatMix groups: choose which output channels (Game, Chat, Media, Aux) follow the media or chat side of ChatMix from the Mixer page's Media Mix Group and Chat Mix Group cards. Saved as `mix_groups` in `general_settings.yaml` and exposed over D-Bus via `SetMixGroup` and the `mix_groups` settings field.
 
 ## Changed
-- Virtual output sinks (Game/Chat/Media/Aux) are created with `module-remap-sink` instead of a null sink plus `module-loopback`. This removes the separate loopback nodes from the PipeWire graph, going from 12 nodes to 8 for the four outputs. Existing null-sink setups are replaced automatically.
+- Virtual output sinks (Game/Chat/Media/Aux) are now a single PipeWire node each: a null sink (with `monitor.channel-volumes=true`, so ChatMix still applies) whose monitor ports are linked straight to the headset with `pw-link`. This replaces the null sink plus `module-loopback`, going from 12 nodes to 4 for the four outputs, and graph tools such as qpwgraph now show an unbroken path from each app to the headset. When `pw-link` is not installed, or linking fails, the daemon falls back to `module-remap-sink` (two nodes per output, no visible link between them). Older setups are rebuilt automatically, and existing links are re-checked each time the daemon sets up the headset.
 
 ## Fixed
 - GUI: "Assign selected stream" on the Routing page now actually moves the stream. The D-Bus client reused one connection across threads/event loops, so the call failed silently (this also affected saving/loading profiles and refreshing endpoint state). Each request now uses its own connection, failures are logged, and the routing status line reports success or failure.

@@ -10,10 +10,16 @@ from linux_arctis_manager.audio_endpoints import (VIRTUAL_AUDIO_ENDPOINTS,
                                                   endpoint_mix_group,
                                                   endpoints_for_mix_group)
 from linux_arctis_manager.constants import STEELSERIES_VENDOR_ID
+from linux_arctis_manager.pw_link import PipeWireLinker, port_channel
 
 ONLY_PHYSICAL = 1
 ONLY_VIRTUAL = 2
 ALL_SINKS = 3
+
+# Marks a null sink created by the direct-link layout (see create_virtual_sink).
+DIRECT_SINK_MARKER = 'monitor.channel-volumes=true'
+LINK_PORT_ATTEMPTS = 20
+LINK_PORT_RETRY_SECONDS = 0.1
 
 class TypedPulseSinkInfo(pulsectl.PulseSinkInfo):
     name: str
@@ -38,7 +44,8 @@ class PulseAudioManager:
     def __init__(self):
         self.pulse = pulsectl.Pulse('linux-arctis-manager')
         self.logger = logging.getLogger('PulseAudioManager')
-    
+        self.linker = PipeWireLinker()
+
     def sink_list_wrapper(self) -> list[TypedPulseSinkInfo]:
         retry_attempts = 15
 
@@ -80,18 +87,55 @@ class PulseAudioManager:
         return sinks
 
     def create_virtual_sink(self, name: str, description: str, sink_output: str) -> None:
-        sink = next((s for s in self.get_arctis_sinks(ONLY_VIRTUAL) if s.proplist.get('node.name', '') == name), None)
-        if sink:
-            if not self._is_legacy_virtual_sink(name):
+        direct = self.linker.available()
+        module = self._virtual_sink_module(name)
+        if module is not None:
+            layout = self._virtual_sink_layout(module)
+            if direct and layout == 'direct':
+                # Links vanish whenever the headset node goes away, so check them again.
+                if self._link_virtual_sink(name, sink_output):
+                    return
+                self.logger.warning(f'Could not re-link virtual sink "{name}", rebuilding it')
+            elif not direct and layout == 'remap':
                 return
-            # Sinks left over from the old null-sink + loopback layout are rebuilt.
+            # Anything else (old null sink + loopback, a remap sink when pw-link is
+            # now available, a direct sink without pw-link) is rebuilt.
             self.remove_virtual_sink(name)
 
-        self.logger.info(f'Creating virtual sink "{name}" -> "{sink_output}"...')
+        if direct:
+            self.logger.info(f'Creating virtual sink "{name}" linked to "{sink_output}"...')
+            if self._create_direct_virtual_sink(name, description, sink_output):
+                return
+            self.logger.warning(f'Falling back to module-remap-sink for "{name}"')
+            self.remove_virtual_sink(name)
+        else:
+            self.logger.info(f'pw-link not found, creating remap sink "{name}" -> "{sink_output}"...')
+
+        self._create_remap_virtual_sink(name, description, sink_output)
+
+    @staticmethod
+    def _sink_description(description: str) -> str:
+        # The description is nested inside two levels of module-argument quoting.
+        return ''.join(c for c in description if c not in '\\\'"')
+
+    def _create_direct_virtual_sink(self, name: str, description: str, sink_output: str) -> bool:
+        # A single null-sink node whose monitor ports are linked straight to the
+        # headset. monitor.channel-volumes makes the sink volume and mute (and so
+        # ChatMix) apply to the monitor ports; PipeWire ignores them otherwise.
+        self.pulse.module_load(
+            'module-null-sink',
+            f'sink_name={name} '
+            f"sink_properties='node.description=\"{self._sink_description(description)}\" "
+            f"{DIRECT_SINK_MARKER}'"
+        )
+
+        return self._link_virtual_sink(name, sink_output)
+
+    def _create_remap_virtual_sink(self, name: str, description: str, sink_output: str) -> None:
+        # Fallback without pw-link: one sink node plus an internal playback stream.
+        # Works on plain PulseAudio too, but on PipeWire the two nodes are not
+        # joined by a visible link.
         escaped_node_description = description.replace(' ', '\\ ')
-        # A remap sink is a virtual sink that plays straight into `master`. On
-        # PipeWire this is one sink node plus one playback stream, instead of a
-        # null sink plus a separate two-node loopback.
         self.pulse.module_load(
             'module-remap-sink',
             f'sink_name={name} '
@@ -99,12 +143,55 @@ class PulseAudioManager:
             f'master={sink_output}'
         )
 
-    def _is_legacy_virtual_sink(self, name: str) -> bool:
-        return any(
-            module.name == 'module-null-sink'
-            and f'sink_name={name}' in (module.argument or '').split()
+    def _link_virtual_sink(self, name: str, sink_output: str) -> bool:
+        """Link `<name>:monitor_*` to `<sink_output>:playback_*`, channel by channel."""
+        attempts = LINK_PORT_ATTEMPTS
+        while True:
+            outputs = [p for p in self.linker.output_ports(name) if p.startswith('monitor_')]
+            inputs = [p for p in self.linker.input_ports(sink_output) if p.startswith('playback_')]
+            if outputs and inputs:
+                break
+            attempts -= 1
+            if attempts <= 0:
+                self.logger.warning(f'Ports for "{name}" -> "{sink_output}" did not appear')
+                return False
+            # Ports show up shortly after the module loads.
+            time.sleep(LINK_PORT_RETRY_SECONDS)
+
+        inputs_by_channel = {port_channel(p): p for p in inputs}
+        pairs: list[tuple[str, str]] = []
+        for output in outputs:
+            target = inputs_by_channel.get(port_channel(output))
+            if target is None and len(inputs) == 1:
+                # Mono headset sink: fold every channel into it.
+                target = inputs[0]
+            if target is not None:
+                pairs.append((output, target))
+
+        if not pairs:
+            self.logger.warning(f'No matching channels between "{name}" and "{sink_output}"')
+            return False
+
+        return all([
+            self.linker.link(f'{name}:{output}', f'{sink_output}:{target}')
+            for output, target in pairs
+        ])
+
+    def _virtual_sink_module(self, name: str) -> Any | None:
+        return next((
+            module
             for module in self.pulse.module_list()
-        )
+            if module.name in ('module-null-sink', 'module-remap-sink')
+            and f'sink_name={name}' in (module.argument or '').split()
+        ), None)
+
+    @staticmethod
+    def _virtual_sink_layout(module: Any) -> str:
+        if module.name == 'module-remap-sink':
+            return 'remap'
+        if DIRECT_SINK_MARKER in (module.argument or ''):
+            return 'direct'
+        return 'legacy'
     
     def remove_virtual_sink(self, name: str) -> None:
         sink = next((s for s in self.get_arctis_sinks(ONLY_VIRTUAL) if s.proplist.get('node.name', '') == name), None)

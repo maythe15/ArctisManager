@@ -152,11 +152,159 @@ class FakeModulePulse:
         ]
 
 
-def make_module_manager(pulse: FakeModulePulse) -> PulseAudioManager:
+HEADSET = 'alsa_output.headset'
+
+
+class FakeLinker:
+    """Simulates pw-link against the null sinks loaded in a FakeModulePulse."""
+
+    def __init__(self, pulse: FakeModulePulse | None = None, available: bool = True,
+                 headset_ports: list[str] | None = None, link_ok: bool = True):
+        self.pulse = pulse
+        self._available = available
+        self.headset_ports = ['playback_FL', 'playback_FR'] if headset_ports is None else headset_ports
+        self.link_ok = link_ok
+        self.links: list[tuple[str, str]] = []
+
+    def available(self) -> bool:
+        return self._available
+
+    def output_ports(self, node_name: str) -> list[str]:
+        if self.pulse is None:
+            return []
+        names = {s.name for s in self.pulse.sink_list()}
+        return ['monitor_FL', 'monitor_FR'] if node_name in names else []
+
+    def input_ports(self, node_name: str) -> list[str]:
+        return list(self.headset_ports) if node_name == HEADSET else []
+
+    def link(self, output_port: str, input_port: str) -> bool:
+        if self.link_ok:
+            self.links.append((output_port, input_port))
+        return self.link_ok
+
+
+def make_module_manager(pulse: FakeModulePulse, linker: FakeLinker | None = None) -> PulseAudioManager:
     manager = object.__new__(PulseAudioManager)
     manager.pulse = pulse
     manager.logger = logging.getLogger('test')
+    manager.linker = linker if linker is not None else FakeLinker(pulse, available=False)
     return manager
+
+
+@pytest.fixture(autouse=True)
+def _no_link_retry_sleep(monkeypatch):
+    monkeypatch.setattr('linux_arctis_manager.pactl.time.sleep', lambda _: None)
+
+
+def test_create_virtual_sink_loads_a_single_null_sink_linked_to_headset():
+    pulse = FakeModulePulse()
+    linker = FakeLinker(pulse)
+    manager = make_module_manager(pulse, linker)
+
+    manager.create_virtual_sink(PULSE_GAME_NODE_NAME, 'Arctis Nova Game', HEADSET)
+
+    assert pulse.loaded == [(
+        'module-null-sink',
+        f'sink_name={PULSE_GAME_NODE_NAME} '
+        'sink_properties=\'node.description="Arctis Nova Game" monitor.channel-volumes=true\'',
+    )]
+    assert linker.links == [
+        (f'{PULSE_GAME_NODE_NAME}:monitor_FL', f'{HEADSET}:playback_FL'),
+        (f'{PULSE_GAME_NODE_NAME}:monitor_FR', f'{HEADSET}:playback_FR'),
+    ]
+
+
+def test_create_virtual_sink_strips_quotes_from_description():
+    pulse = FakeModulePulse()
+    manager = make_module_manager(pulse, FakeLinker(pulse))
+
+    manager.create_virtual_sink(PULSE_GAME_NODE_NAME, 'Bob\'s "Nova"\\ Game', HEADSET)
+
+    assert 'node.description="Bobs Nova Game"' in pulse.loaded[0][1]
+
+
+def test_create_virtual_sink_relinks_existing_direct_sink():
+    pulse = FakeModulePulse([
+        FakeModule(1, 'module-null-sink',
+                   f'sink_name={PULSE_GAME_NODE_NAME} sink_properties=\'node.description="Game" monitor.channel-volumes=true\''),
+    ])
+    linker = FakeLinker(pulse)
+    manager = make_module_manager(pulse, linker)
+
+    manager.create_virtual_sink(PULSE_GAME_NODE_NAME, 'Game', HEADSET)
+
+    assert pulse.loaded == []
+    assert pulse.unloaded == []
+    assert len(linker.links) == 2
+
+
+def test_create_virtual_sink_replaces_remap_sink_when_pw_link_available():
+    pulse = FakeModulePulse([
+        FakeModule(1, 'module-remap-sink', f'sink_name={PULSE_GAME_NODE_NAME} master={HEADSET}'),
+    ])
+    manager = make_module_manager(pulse, FakeLinker(pulse))
+
+    manager.create_virtual_sink(PULSE_GAME_NODE_NAME, 'Game', HEADSET)
+
+    assert pulse.unloaded == [1]
+    assert [name for name, _ in pulse.loaded] == ['module-null-sink']
+
+
+def test_create_virtual_sink_replaces_legacy_null_sink_with_direct_sink():
+    pulse = FakeModulePulse([
+        FakeModule(1, 'module-null-sink', f'sink_name={PULSE_GAME_NODE_NAME} sink_properties=node.description="Game"'),
+        FakeModule(2, 'module-loopback', f'source={PULSE_GAME_NODE_NAME}.monitor sink={HEADSET} latency_msec=0'),
+    ])
+    manager = make_module_manager(pulse, FakeLinker(pulse))
+
+    manager.create_virtual_sink(PULSE_GAME_NODE_NAME, 'Game', HEADSET)
+
+    assert sorted(pulse.unloaded) == [1, 2]
+    assert [name for name, _ in pulse.loaded] == ['module-null-sink']
+    assert 'monitor.channel-volumes=true' in pulse.loaded[0][1]
+
+
+def test_create_virtual_sink_folds_channels_into_mono_headset():
+    pulse = FakeModulePulse()
+    linker = FakeLinker(pulse, headset_ports=['playback_MONO'])
+    manager = make_module_manager(pulse, linker)
+
+    manager.create_virtual_sink(PULSE_GAME_NODE_NAME, 'Game', HEADSET)
+
+    assert [target for _, target in linker.links] == [f'{HEADSET}:playback_MONO'] * 2
+
+
+def test_create_virtual_sink_falls_back_to_remap_when_linking_fails():
+    pulse = FakeModulePulse()
+    manager = make_module_manager(pulse, FakeLinker(pulse, link_ok=False))
+
+    manager.create_virtual_sink(PULSE_GAME_NODE_NAME, 'Game', HEADSET)
+
+    assert [name for name, _ in pulse.loaded] == ['module-null-sink', 'module-remap-sink']
+    assert [m.name for m in pulse.modules] == ['module-remap-sink']
+
+
+def test_create_virtual_sink_falls_back_to_remap_when_headset_ports_missing():
+    pulse = FakeModulePulse()
+    manager = make_module_manager(pulse, FakeLinker(pulse, headset_ports=[]))
+
+    manager.create_virtual_sink(PULSE_GAME_NODE_NAME, 'Game', HEADSET)
+
+    assert [m.name for m in pulse.modules] == ['module-remap-sink']
+
+
+def test_create_virtual_sink_rebuilds_direct_sink_as_remap_without_pw_link():
+    pulse = FakeModulePulse([
+        FakeModule(1, 'module-null-sink',
+                   f'sink_name={PULSE_GAME_NODE_NAME} sink_properties=\'node.description="Game" monitor.channel-volumes=true\''),
+    ])
+    manager = make_module_manager(pulse)
+
+    manager.create_virtual_sink(PULSE_GAME_NODE_NAME, 'Game', HEADSET)
+
+    assert pulse.unloaded == [1]
+    assert [name for name, _ in pulse.loaded] == ['module-remap-sink']
 
 
 def test_create_virtual_sink_loads_a_single_remap_sink():
