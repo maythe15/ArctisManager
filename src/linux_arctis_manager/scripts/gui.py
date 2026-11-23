@@ -8,6 +8,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from linux_arctis_manager.gui.main_app import QMainApp
+from linux_arctis_manager.gui.ui_utils import install_pointing_cursor_filter
 from linux_arctis_manager.i18n import I18n
 
 
@@ -33,6 +34,7 @@ def main():
     app_name = I18n.get_instance().translate('ui', 'app_name')
     app.setApplicationName(app_name)
     app.setApplicationDisplayName(app_name)
+    install_pointing_cursor_filter(app)
 
     q_object = None
     if args.systray:

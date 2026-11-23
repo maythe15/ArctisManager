@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Changed
 - Virtual output sinks (Game/Chat/Media/Aux) are created with `module-remap-sink` instead of a null sink plus `module-loopback`. This removes the separate loopback nodes from the PipeWire graph, going from 12 nodes to 8 for the four outputs. Existing null-sink setups are replaced automatically.
 
+## Fixed
+- GUI: "Assign selected stream" on the Routing page now actually moves the stream. The D-Bus client reused one connection across threads/event loops, so the call failed silently (this also affected saving/loading profiles and refreshing endpoint state). Each request now uses its own connection, failures are logged, and the routing status line reports success or failure.
+- GUI: the selected stream and output on the Routing page are no longer reset whenever settings refresh.
+- GUI: buttons, combo boxes, sliders, checkboxes and tabs now show a pointing-hand cursor when enabled.
+
 ## [2.4.1]
 
 ## Added

@@ -2,9 +2,10 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from PySide6 import QtSvg
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QImage, QPainter, QPalette, QPixmap
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import (QAbstractButton, QAbstractSlider, QApplication,
+                               QComboBox, QTabBar, QWidget)
 
 ICON_PATH = Path(__file__).parent / 'images' / 'app_icon.svg'
 
@@ -39,3 +40,36 @@ def get_icon_pixmap(icon_path: Path = ICON_PATH, color: QPalette.ColorRole = QPa
     pixmap = QPixmap.fromImage(image)
 
     return pixmap
+
+
+CLICKABLE_WIDGET_TYPES = (QAbstractButton, QComboBox, QAbstractSlider, QTabBar)
+
+
+class PointingCursorFilter(QObject):
+    """Give every enabled clickable widget a pointing-hand cursor.
+
+    Installed once on the QApplication so widgets built later (e.g. the
+    settings controls generated from D-Bus metadata) are covered too. Disabled
+    widgets fall back to the default arrow so they don't look pressable.
+    """
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if event.type() in (QEvent.Type.Polish, QEvent.Type.EnabledChange) \
+                and isinstance(watched, CLICKABLE_WIDGET_TYPES):
+            apply_pointing_cursor(watched)
+
+        return False
+
+
+def apply_pointing_cursor(widget: QWidget) -> None:
+    if widget.isEnabled():
+        widget.setCursor(Qt.CursorShape.PointingHandCursor)
+    else:
+        widget.unsetCursor()
+
+
+def install_pointing_cursor_filter(app: QApplication) -> PointingCursorFilter:
+    cursor_filter = PointingCursorFilter(app)
+    app.installEventFilter(cursor_filter)
+
+    return cursor_filter

@@ -57,6 +57,7 @@ class QMainApp(QBaseDesktopApp):
         self.demo_mode = demo_mode
         self.settings = {}
         self.status = {}
+        self.route_feedback = ''
 
         self.dbus_wrapper = None
         if not self.demo_mode:
@@ -65,6 +66,7 @@ class QMainApp(QBaseDesktopApp):
             self.dbus_wrapper = DbusWrapper()
             self.dbus_wrapper.sig_settings.connect(self.on_settings_received)
             self.dbus_wrapper.sig_status.connect(self.on_status_received)
+            self.dbus_wrapper.sig_route_moved.connect(self.on_route_moved)
 
         self.main_window = self.main_window_setup()
 
@@ -231,7 +233,6 @@ class QMainApp(QBaseDesktopApp):
             button = QPushButton(text)
             button.setObjectName('navButton')
             button.setCheckable(True)
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.clicked.connect(lambda _, name=panel_name: self.switch_panel(name))
             self.nav_buttons[panel_name] = button
             layout.addWidget(button)
@@ -300,7 +301,6 @@ class QMainApp(QBaseDesktopApp):
         ]:
             button = QPushButton(text)
             button.setObjectName('secondaryAction')
-            button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.clicked.connect(lambda _, name=panel_name: self.switch_panel(name))
             quick_actions_layout.addWidget(button)
             self.dashboard_action_buttons[panel_name] = button
@@ -1350,6 +1350,9 @@ class QMainApp(QBaseDesktopApp):
         ]
         route_rows = application_route_rows({'application_routes': valid_routes})
 
+        selected_stream = self.route_app_stream_combo.currentData()
+        selected_endpoint = self.route_endpoint_combo.currentData()
+
         self.route_app_stream_combo.clear()
         if route_rows:
             for route in route_rows:
@@ -1364,6 +1367,10 @@ class QMainApp(QBaseDesktopApp):
         else:
             self.route_endpoint_combo.addItem('No virtual outputs ready', '')
 
+        # Settings refreshes arrive whenever anything changes; keep the user's picks.
+        self._restore_combo_selection(self.route_app_stream_combo, selected_stream)
+        self._restore_combo_selection(self.route_endpoint_combo, selected_endpoint)
+
         controls_enabled = bool(self.dbus_wrapper) and bool(valid_routes) and bool(available_endpoints)
         self.route_app_stream_combo.setEnabled(controls_enabled)
         self.route_endpoint_combo.setEnabled(controls_enabled)
@@ -1377,7 +1384,18 @@ class QMainApp(QBaseDesktopApp):
         elif not available_endpoints:
             self.application_route_status_label.setText('No implemented virtual outputs are ready yet.')
         else:
-            self.application_route_status_label.setText(f'{len(valid_routes)} active app stream(s) can be assigned.')
+            ready_text = f'{len(valid_routes)} active app stream(s) can be assigned.'
+            self.application_route_status_label.setText(
+                f'{self.route_feedback} {ready_text}' if self.route_feedback else ready_text
+            )
+
+    @staticmethod
+    def _restore_combo_selection(combo: QComboBox, data: object) -> None:
+        if data is None:
+            return
+        index = combo.findData(data)
+        if index >= 0:
+            combo.setCurrentIndex(index)
 
     def _refresh_application_route_rows(self, route_rows: list[dict[str, str | int]]) -> None:
         self._clear_layout(self.application_route_rows_layout)
@@ -1412,8 +1430,31 @@ class QMainApp(QBaseDesktopApp):
             self.application_route_status_label.setText('Choose an active stream and a ready virtual output first.')
             return
 
+        self.route_feedback = ''
         self.application_route_status_label.setText('Route assignment requested.')
         self.dbus_wrapper.move_application_route(stream_index, endpoint_node_name)
+
+    @Slot(bool, int, str)
+    def on_route_moved(self, success: bool, stream_index: int, endpoint_node_name: str) -> None:
+        endpoint_label = next((
+            endpoint.label
+            for endpoint in VIRTUAL_AUDIO_ENDPOINTS
+            if endpoint.node_name == endpoint_node_name
+        ), endpoint_node_name)
+        stream_label = next((
+            str(route.get('application_name') or route.get('name') or '')
+            for route in self.settings.get('application_routes', []) or []
+            if isinstance(route, dict) and route.get('stream_index') == stream_index
+        ), '') or f'Stream {stream_index}'
+
+        if success:
+            self.route_feedback = f'Moved {stream_label} to {endpoint_label}.'
+        else:
+            self.route_feedback = (
+                f'Could not move {stream_label} to {endpoint_label}; '
+                'the stream may have ended or the output is missing (see daemon log).'
+            )
+        self.application_route_status_label.setText(self.route_feedback)
 
     def _stylesheet(self) -> str:
         return '''
