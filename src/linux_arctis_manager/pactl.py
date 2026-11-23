@@ -81,21 +81,28 @@ class PulseAudioManager:
     def create_virtual_sink(self, name: str, description: str, sink_output: str) -> None:
         sink = next((s for s in self.get_arctis_sinks(ONLY_VIRTUAL) if s.proplist.get('node.name', '') == name), None)
         if sink:
-            return
-        
+            if not self._is_legacy_virtual_sink(name):
+                return
+            # Sinks left over from the old null-sink + loopback layout are rebuilt.
+            self.remove_virtual_sink(name)
+
         self.logger.info(f'Creating virtual sink "{name}" -> "{sink_output}"...')
         escaped_node_description = description.replace(' ', '\\ ')
+        # A remap sink is a virtual sink that plays straight into `master`. On
+        # PipeWire this is one sink node plus one playback stream, instead of a
+        # null sink plus a separate two-node loopback.
         self.pulse.module_load(
-            'module-null-sink',
+            'module-remap-sink',
             f'sink_name={name} '
-            f'sink_properties=node.description="{escaped_node_description}"'
+            f'sink_properties=node.description="{escaped_node_description}" '
+            f'master={sink_output}'
         )
 
-        self.pulse.module_load(
-            'module-loopback',
-            f'source={name}.monitor '
-            f'sink={sink_output} '
-            'latency_msec=0'
+    def _is_legacy_virtual_sink(self, name: str) -> bool:
+        return any(
+            module.name == 'module-null-sink'
+            and f'sink_name={name}' in (module.argument or '').split()
+            for module in self.pulse.module_list()
         )
     
     def remove_virtual_sink(self, name: str) -> None:

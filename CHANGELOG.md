@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## Changed
+- Virtual output sinks (Game/Chat/Media/Aux) are created with `module-remap-sink` instead of a null sink plus `module-loopback`. This removes the separate loopback nodes from the PipeWire graph, going from 12 nodes to 8 for the four outputs. Existing null-sink setups are replaced automatically.
+
 ## [2.4.1]
 
 ## Added
