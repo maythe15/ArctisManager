@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Added
+- Configurable ChatMix groups: choose which output channels (Game, Chat, Media, Aux) follow the media or chat side of ChatMix from the Mixer page's Media Mix Group and Chat Mix Group cards. Saved as `mix_groups` in `general_settings.yaml` and exposed over D-Bus via `SetMixGroup` and the `mix_groups` settings field.
+
 ## Changed
 - Virtual output sinks (Game/Chat/Media/Aux) are created with `module-remap-sink` instead of a null sink plus `module-loopback`. This removes the separate loopback nodes from the PipeWire graph, going from 12 nodes to 8 for the four outputs. Existing null-sink setups are replaced automatically.
 

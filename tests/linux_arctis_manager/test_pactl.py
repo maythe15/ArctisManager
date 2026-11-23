@@ -3,6 +3,7 @@ import logging
 import pytest
 
 from linux_arctis_manager.constants import (
+    PULSE_AUX_NODE_NAME,
     PULSE_CHAT_NODE_NAME,
     PULSE_GAME_NODE_NAME,
     PULSE_MEDIA_NODE_NAME,
@@ -209,3 +210,62 @@ def test_remove_virtual_sink_unloads_remap_sink():
     manager.remove_virtual_sink(PULSE_GAME_NODE_NAME)
 
     assert pulse.unloaded == [1]
+
+
+class FakeVolumePulse:
+    def __init__(self):
+        self.volumes: dict[str, float] = {}
+
+    def volume_set_all_chans(self, sink, volume):
+        self.volumes[sink.proplist['node.name']] = volume
+
+
+def _volume_manager():
+    manager = object.__new__(PulseAudioManager)
+    manager.pulse = FakeVolumePulse()
+    manager.logger = logging.getLogger('test')
+    manager.get_arctis_sinks = lambda *args, **kwargs: [
+        FakeSink(PULSE_GAME_NODE_NAME, 'Arctis Game', 10),
+        FakeSink(PULSE_CHAT_NODE_NAME, 'Arctis Chat', 11),
+        FakeSink(PULSE_MEDIA_NODE_NAME, 'Arctis Media', 12),
+        FakeSink(PULSE_AUX_NODE_NAME, 'Arctis Aux', 13),
+    ]
+    return manager
+
+
+def test_set_mix_uses_default_mix_groups():
+    manager = _volume_manager()
+
+    manager.set_mix(30, 80)
+
+    assert manager.pulse.volumes == {
+        PULSE_GAME_NODE_NAME: 0.3,
+        PULSE_CHAT_NODE_NAME: 0.8,
+        PULSE_MEDIA_NODE_NAME: 0.3,
+        PULSE_AUX_NODE_NAME: 0.3,
+    }
+
+
+def test_set_mix_honors_custom_mix_groups():
+    manager = _volume_manager()
+
+    manager.set_mix(30, 80, {'aux': 'chat', 'chat': 'media'})
+
+    assert manager.pulse.volumes == {
+        PULSE_GAME_NODE_NAME: 0.3,
+        PULSE_CHAT_NODE_NAME: 0.3,
+        PULSE_MEDIA_NODE_NAME: 0.3,
+        PULSE_AUX_NODE_NAME: 0.8,
+    }
+
+
+def test_virtual_endpoint_statuses_report_custom_mix_groups():
+    manager = object.__new__(PulseAudioManager)
+    manager.pulse = FakePulse()
+    manager.logger = logging.getLogger('test')
+
+    by_node = {status['node_name']: status for status in manager.virtual_endpoint_statuses({'aux': 'chat'})}
+
+    assert by_node[PULSE_AUX_NODE_NAME]['mix_group'] == 'chat'
+    assert by_node[PULSE_GAME_NODE_NAME]['mix_group'] == 'media'
+    assert by_node[PULSE_MICROPHONE_NODE_NAME]['mix_group'] == 'microphone'

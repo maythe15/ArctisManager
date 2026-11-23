@@ -95,7 +95,21 @@ class CoreEngine:
         if new_media_mix != self.media_mix or new_chat_mix != self.chat_mix:
             self.media_mix = new_media_mix
             self.chat_mix = new_chat_mix
-            self.pa_audio_manager.set_mix(self.media_mix, self.chat_mix)
+            self.pa_audio_manager.set_mix(self.media_mix, self.chat_mix, self.general_settings.mix_groups)
+
+    def set_mix_group(self, channel: str, group: str) -> bool:
+        '''Move an output channel to the media or chat side of ChatMix and re-apply the current mix.'''
+        if not self.general_settings.set_mix_group(channel, group):
+            self.logger.warning('Invalid mix group assignment: %s -> %s', channel, group)
+            return False
+
+        self.general_settings.write_to_file()
+
+        # Only re-apply when the headset has reported ChatMix; otherwise leave sink volumes alone.
+        if self.device_status and 'media_mix' in self.device_status and 'chat_mix' in self.device_status:
+            self.pa_audio_manager.set_mix(self.media_mix, self.chat_mix, self.general_settings.mix_groups)
+
+        return True
     
     async def listen_endpoint_loop(self, interface_id: int):
         if self.usb_device is None:

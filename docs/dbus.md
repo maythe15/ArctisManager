@@ -58,6 +58,12 @@ The clients shouldn't hard-core the settings, but read them and parse them depen
         "available": ["Default", "Late Night"],
         "active": "Late Night"
     },
+    "mix_groups": {
+        "game": "media",
+        "chat": "chat",
+        "media": "media",
+        "aux": "media"
+    },
     "audio_endpoints": [
         {
             "node_name": "Arctis_Game",
@@ -177,6 +183,13 @@ Returns active application playback streams. Streams without application identit
 - **Specs**:
 
 Moves one active playback stream to an implemented virtual output sink such as `Arctis_Game`, `Arctis_Chat`, `Arctis_Media`, or `Arctis_Aux`. Returns false when the stream cannot be moved or the endpoint is unsupported/missing.
+
+### Method: SetMixGroup
+- **Parameters**: channel: string, group: string
+- **Response format**: boolean
+- **Specs**:
+
+Assigns an output channel (`game`, `chat`, `media`, or `aux`) to the `media` or `chat` side of the hardware ChatMix dial. The assignment is saved under `mix_groups` in `general_settings.yaml`, reported in the `mix_groups` field of `GetSettings` and in each endpoint's `mix_group`, and the current ChatMix levels are re-applied immediately when the headset has reported them. Emits `SettingsChanged` on success. Returns false for an unknown channel or group. Defaults: Chat follows `chat`, Game/Media/Aux follow `media`. A side may be left with no channels.
 
 ### Method: ListProfiles
 - **Parameters**: (none)

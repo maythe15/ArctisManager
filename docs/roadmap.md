@@ -20,6 +20,7 @@ The first UI expansion adds a dashboard-first PySide shell with mixer, routing, 
 - Expose audio endpoint state over D-Bus.
 - Move active application streams to ready virtual outputs.
 - Apply ChatMix to Chat separately from Game, Media, and Aux.
+- Let users choose which output channels follow each side of ChatMix.
 - Keep the GUI driven by D-Bus settings/status metadata.
 
 ## Beta

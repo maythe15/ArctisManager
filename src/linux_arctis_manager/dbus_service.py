@@ -7,6 +7,7 @@ import pulsectl
 from dbus_next.aio.message_bus import MessageBus
 from dbus_next.service import ServiceInterface, method, signal
 
+from linux_arctis_manager.audio_endpoints import normalize_mix_groups
 from linux_arctis_manager.config import ConfigSetting, DeviceConfiguration, parsed_status
 from linux_arctis_manager.constants import (DBUS_BUS_NAME,
                                             DBUS_CONFIG_INTERFACE_NAME,
@@ -110,10 +111,13 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
     def _audio_endpoint_metadata(self) -> list[dict]:
         try:
-            return self.core_engine.pa_audio_manager.virtual_endpoint_statuses()
+            return self.core_engine.pa_audio_manager.virtual_endpoint_statuses(self._mix_groups())
         except pulsectl.PulseError as e:
             self.logger.warning('Failed to read audio endpoint state: %s', e)
             return []
+
+    def _mix_groups(self) -> dict[str, str]:
+        return dict(normalize_mix_groups(getattr(self.core_engine.general_settings, 'mix_groups', None)))
 
     def _application_route_metadata(self) -> list[dict]:
         try:
@@ -147,6 +151,7 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             'device_info': self._device_metadata(),
             'profiles': self._profile_metadata(),
             'audio_endpoints': self._audio_endpoint_metadata(),
+            'mix_groups': self._mix_groups(),
             'application_routes': self._application_route_metadata(),
             'settings_config': {
                 config.name: config.to_dict()
@@ -189,6 +194,15 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
         return result
     
+    @method('SetMixGroup')
+    def set_mix_group(self, channel: 's', group: 's') -> 'b': # type: ignore
+        if not self.core_engine.set_mix_group(channel, group):
+            return False
+
+        self.signal_settings_changed(self.settings_to_json(self.core_engine.general_settings, self.core_engine.device_config, self.core_engine.device_settings))
+
+        return True
+
     @method('SetSetting')
     def set_setting(self, setting: 's', value: 's') -> 'b': # type: ignore
         try:

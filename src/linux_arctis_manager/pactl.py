@@ -1,12 +1,13 @@
 import logging
 import time
-from typing import Any
+from typing import Any, Mapping
 
 import pulsectl
 
 from linux_arctis_manager.audio_endpoints import (VIRTUAL_AUDIO_ENDPOINTS,
                                                   VIRTUAL_SINK_ENDPOINTS,
                                                   VIRTUAL_SINK_NODE_NAMES,
+                                                  endpoint_mix_group,
                                                   endpoints_for_mix_group)
 from linux_arctis_manager.constants import STEELSERIES_VENDOR_ID
 
@@ -151,7 +152,7 @@ class PulseAudioManager:
 
         return sink
 
-    def virtual_endpoint_statuses(self) -> list[dict[str, Any]]:
+    def virtual_endpoint_statuses(self, mix_groups: Mapping[str, str] | None = None) -> list[dict[str, Any]]:
         try:
             sinks = self.pulse.sink_list()
         except pulsectl.PulseError as e:
@@ -177,7 +178,7 @@ class PulseAudioManager:
                 'node_name': endpoint.node_name,
                 'label': endpoint.label,
                 'kind': endpoint.kind,
-                'mix_group': endpoint.mix_group,
+                'mix_group': endpoint_mix_group(endpoint, mix_groups),
                 'implemented': endpoint.implemented,
                 'present': sink is not None,
                 'default': sink is not None and sink.proplist.get('node.name', '') == default_sink_name,
@@ -272,7 +273,7 @@ class PulseAudioManager:
 
         return True
 
-    def set_mix(self, media_mix: int, chat_mix: int):
+    def set_mix(self, media_mix: int, chat_mix: int, mix_groups: Mapping[str, str] | None = None):
         if media_mix > 100:
             media_mix = 100
         if chat_mix > 100:
@@ -282,10 +283,10 @@ class PulseAudioManager:
 
         sinks_by_node_name = {s.proplist.get('node.name', ''): s for s in sinks}
 
-        for endpoint in endpoints_for_mix_group('media'):
+        for endpoint in endpoints_for_mix_group('media', mix_groups):
             if sink := sinks_by_node_name.get(endpoint.node_name):
                 self.pulse.volume_set_all_chans(sink, media_mix / 100)
-        for endpoint in endpoints_for_mix_group('chat'):
+        for endpoint in endpoints_for_mix_group('chat', mix_groups):
             if sink := sinks_by_node_name.get(endpoint.node_name):
                 self.pulse.volume_set_all_chans(sink, chat_mix / 100)
 
