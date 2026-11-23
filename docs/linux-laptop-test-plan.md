@@ -86,9 +86,10 @@ Use a browser, music player, or game that is actively producing sound. Keep the 
 1. Open the Routing page.
 2. Confirm the app appears under Active App Streams.
 3. Select the app and choose a ready output such as Game or Chat.
-4. Click Assign Selected App.
-5. Confirm the Route Map shows the app under the selected endpoint.
-6. Repeat with another ready endpoint if available.
+4. Click Assign selected stream.
+5. Confirm the status line under the button says "Moved <app> to <output>." (a failure is reported there too, with details in the daemon log).
+6. Confirm the Route Map shows the app under the selected endpoint.
+7. Repeat with another ready endpoint if available.
 
 From a terminal, this command should show the app stream and the sink it is using:
 

@@ -1,8 +1,9 @@
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from threading import Thread
-from time import sleep
+from typing import Any, AsyncIterator, Callable, Coroutine
 
 from dbus_next.aio.message_bus import MessageBus
 from dbus_next.aio.proxy_object import ProxyInterface
@@ -20,69 +21,84 @@ from linux_arctis_manager.constants import (DBUS_BUS_NAME,
 class DbusWrapper(QObject):
     sig_status = Signal(object)
     sig_settings = Signal(object)
+    # (success, stream_index, endpoint_node_name)
+    sig_route_moved = Signal(bool, int, str)
 
     logger = logging.getLogger('DbusWrapper')
 
     def __init__(self, parent: QObject|None = None):
         super().__init__(parent)
 
-        self._dbus: MessageBus|None = None
         self._stopping = False
 
         self._status_signal_loop: asyncio.AbstractEventLoop|None = None
         self._stop_status_signal_future: asyncio.Future|None = None
 
-        self._status_iface: ProxyInterface|None = None
-        self._settings_iface: ProxyInterface|None = None
         self._settings_signal_loop: asyncio.AbstractEventLoop|None = None
         self._stop_settings_signal_future: asyncio.Future|None = None
 
-    async def status_iface(self):
-        if not self._status_iface:
-            bus = await MessageBus().connect()
-            introspection = await bus.introspect(DBUS_BUS_NAME, DBUS_STATUS_OBJECT_PATH)
-            obj = bus.get_proxy_object(DBUS_BUS_NAME, DBUS_STATUS_OBJECT_PATH, introspection)
-            self._status_iface = obj.get_interface(DBUS_STATUS_INTERFACE_NAME)
+    # A dbus-next MessageBus is bound to the asyncio loop that created it, and
+    # every request here runs in its own thread with its own `asyncio.run()`
+    # loop. Sharing a cached bus/interface across those loops makes calls fail
+    # ("attached to a different loop" or a closed loop), so each loop gets its
+    # own connection.
+    @staticmethod
+    @asynccontextmanager
+    async def _interface(object_path: str, interface_name: str) -> AsyncIterator[ProxyInterface]:
+        bus = await MessageBus().connect()
+        try:
+            introspection = await bus.introspect(DBUS_BUS_NAME, object_path)
+            obj = bus.get_proxy_object(DBUS_BUS_NAME, object_path, introspection)
+            yield obj.get_interface(interface_name)
+        finally:
+            bus.disconnect()
 
-        return self._status_iface
+    @classmethod
+    def _status_iface(cls):
+        return cls._interface(DBUS_STATUS_OBJECT_PATH, DBUS_STATUS_INTERFACE_NAME)
 
-    async def settings_iface(self):
-        if not self._settings_iface:
-            bus = await MessageBus().connect()
-            introspection = await bus.introspect(DBUS_BUS_NAME, DBUS_SETTINGS_OBJECT_PATH)
-            obj = bus.get_proxy_object(DBUS_BUS_NAME, DBUS_SETTINGS_OBJECT_PATH, introspection)
-            self._settings_iface = obj.get_interface(DBUS_SETTINGS_INTERFACE_NAME)
+    @classmethod
+    def _settings_iface(cls):
+        return cls._interface(DBUS_SETTINGS_OBJECT_PATH, DBUS_SETTINGS_INTERFACE_NAME)
 
-        return self._settings_iface
+    @classmethod
+    def _run_in_thread(cls, description: str, coro_factory: Callable[[], Coroutine[Any, Any, None]]) -> None:
+        def target() -> None:
+            try:
+                asyncio.run(coro_factory())
+            except Exception:
+                cls.logger.exception('D-Bus request failed: %s', description)
+
+        Thread(target=target, daemon=True).start()
 
     def start(self):
         self.request_status()
         self.request_settings()
 
-        status_signal_thread = Thread(target=lambda: asyncio.run(self._register_status_dbus_signal()))
-        status_signal_thread.start()
-        settings_signal_thread = Thread(target=lambda: asyncio.run(self._register_settings_dbus_signal()))
-        settings_signal_thread.start()
-    
+        self._run_in_thread('status signal', self._register_status_dbus_signal)
+        self._run_in_thread('settings signal', self._register_settings_dbus_signal)
+
     async def _register_status_dbus_signal(self):
         def callback(status: str) -> None:
             self.sig_status.emit(json.loads(status) or {})
 
-        (await self.status_iface()).on_status_changed(callback) # type: ignore
+        async with self._status_iface() as iface:
+            iface.on_status_changed(callback) # type: ignore
 
-        self._status_signal_loop = asyncio.get_running_loop()
-        self._stop_status_signal_future = self._status_signal_loop.create_future()
-        await self._stop_status_signal_future
+            self._status_signal_loop = asyncio.get_running_loop()
+            self._stop_status_signal_future = self._status_signal_loop.create_future()
+            await self._stop_status_signal_future
 
     async def _register_settings_dbus_signal(self):
         def callback(settings: str) -> None:
             self.sig_settings.emit(json.loads(settings) or {})
 
-        (await self.settings_iface()).on_settings_changed(callback) # type: ignore
+        async with self._settings_iface() as iface:
+            iface.on_settings_changed(callback) # type: ignore
 
-        self._settings_signal_loop = asyncio.get_running_loop()
-        self._stop_settings_signal_future = self._settings_signal_loop.create_future()
-        await self._stop_settings_signal_future
+            self._settings_signal_loop = asyncio.get_running_loop()
+            self._stop_settings_signal_future = self._settings_signal_loop.create_future()
+            await self._stop_settings_signal_future
 
     def stop(self):
         self.logger.info("Stopping D-Bus wrapper...")
@@ -93,22 +109,20 @@ class DbusWrapper(QObject):
             self._settings_signal_loop.call_soon_threadsafe(self._stop_settings_signal_future.set_result, None)
 
     def request_status(self) -> None:
-        request_thread = Thread(target=lambda: asyncio.run(self._request_status_async()))
-        request_thread.start()
+        self._run_in_thread('GetStatus', self._request_status_async)
 
     async def _request_status_async(self):
-        iface = await self.status_iface()
-        result = await iface.call_get_status() # type: ignore
+        async with self._status_iface() as iface:
+            result = await iface.call_get_status() # type: ignore
 
         self.sig_status.emit(json.loads(result) or {})
 
     def request_settings(self) -> None:
-        request_thread = Thread(target=lambda: asyncio.run(self._request_settings_async()))
-        request_thread.start()
-    
+        self._run_in_thread('GetSettings', self._request_settings_async)
+
     async def _request_settings_async(self):
-        iface = await self.settings_iface()
-        result = await iface.call_get_settings() # type: ignore
+        async with self._settings_iface() as iface:
+            result = await iface.call_get_settings() # type: ignore
 
         self.sig_settings.emit(json.loads(result) or {})
     
@@ -167,28 +181,34 @@ class DbusWrapper(QObject):
         ))
 
     def save_profile(self, name: str) -> None:
-        request_thread = Thread(target=lambda: asyncio.run(self._save_profile_async(name)))
-        request_thread.start()
+        self._run_in_thread('SaveProfile', lambda: self._save_profile_async(name))
 
     async def _save_profile_async(self, name: str):
-        iface = await self.settings_iface()
-        await iface.call_save_profile(name) # type: ignore
+        async with self._settings_iface() as iface:
+            await iface.call_save_profile(name) # type: ignore
         self.request_settings()
 
     def load_profile(self, name: str) -> None:
-        request_thread = Thread(target=lambda: asyncio.run(self._load_profile_async(name)))
-        request_thread.start()
+        self._run_in_thread('LoadProfile', lambda: self._load_profile_async(name))
 
     async def _load_profile_async(self, name: str):
-        iface = await self.settings_iface()
-        await iface.call_load_profile(name) # type: ignore
+        async with self._settings_iface() as iface:
+            await iface.call_load_profile(name) # type: ignore
         self.request_settings()
 
     def move_application_route(self, stream_index: int, endpoint_node_name: str) -> None:
-        request_thread = Thread(target=lambda: asyncio.run(self._move_application_route_async(stream_index, endpoint_node_name)))
-        request_thread.start()
+        self._run_in_thread(
+            'MoveApplicationRoute',
+            lambda: self._move_application_route_async(stream_index, endpoint_node_name),
+        )
 
     async def _move_application_route_async(self, stream_index: int, endpoint_node_name: str):
-        iface = await self.settings_iface()
-        await iface.call_move_application_route(stream_index, endpoint_node_name) # type: ignore
+        moved = False
+        try:
+            async with self._settings_iface() as iface:
+                moved = bool(await iface.call_move_application_route(stream_index, endpoint_node_name)) # type: ignore
+        except Exception:
+            self.logger.exception('MoveApplicationRoute failed for stream %s -> %s', stream_index, endpoint_node_name)
+        finally:
+            self.sig_route_moved.emit(moved, stream_index, endpoint_node_name)
         self.request_settings()

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## Fixed
+- GUI: "Assign selected stream" on the Routing page now actually moves the stream. The D-Bus client reused one connection across threads/event loops, so the call failed silently (this also affected saving/loading profiles and refreshing endpoint state). Each request now uses its own connection, failures are logged, and the routing status line reports success or failure.
+- GUI: the selected stream and output on the Routing page are no longer reset whenever settings refresh.
+- GUI: buttons, combo boxes, sliders, checkboxes and tabs now show a pointing-hand cursor when enabled.
+
 ## [2.4.1]
 
 ## Added
