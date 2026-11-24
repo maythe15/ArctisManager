@@ -20,6 +20,9 @@ ALL_SINKS = 3
 DIRECT_SINK_MARKER = 'monitor.channel-volumes=true'
 LINK_PORT_ATTEMPTS = 20
 LINK_PORT_RETRY_SECONDS = 0.1
+# At login the daemon can start before pipewire-pulse accepts connections.
+PULSE_CONNECT_ATTEMPTS = 30
+PULSE_CONNECT_RETRY_SECONDS = 1.0
 
 class TypedPulseSinkInfo(pulsectl.PulseSinkInfo):
     name: str
@@ -42,9 +45,26 @@ class PulseAudioManager:
         return PulseAudioManager._instance
 
     def __init__(self):
-        self.pulse = pulsectl.Pulse('linux-arctis-manager')
         self.logger = logging.getLogger('PulseAudioManager')
+        self.pulse = self._connect()
         self.linker = PipeWireLinker()
+
+    def _connect(self) -> pulsectl.Pulse:
+        '''
+        Connect to the PulseAudio server, waiting for it if it is not up yet.
+        Failing at once would make systemd restart the daemon until it hits the
+        unit's start limit.
+        '''
+        for attempt in range(1, PULSE_CONNECT_ATTEMPTS + 1):
+            try:
+                return pulsectl.Pulse('linux-arctis-manager')
+            except pulsectl.PulseError as e:
+                if attempt == PULSE_CONNECT_ATTEMPTS:
+                    raise
+                self.logger.warning(f'PulseAudio server not available yet ({e}), retrying...')
+                time.sleep(PULSE_CONNECT_RETRY_SECONDS)
+
+        raise AssertionError('unreachable')
 
     def sink_list_wrapper(self) -> list[TypedPulseSinkInfo]:
         retry_attempts = 15

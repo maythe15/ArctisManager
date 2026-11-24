@@ -229,7 +229,9 @@ def _run_setup(args: Namespace) -> int:
             return result
     
     print('Enabling systemd service...')
-    ensure_systemd_unit(True, True)
+    if not ensure_systemd_unit(True, True):
+        print('error: could not start the systemd service. See `journalctl --user -u arctis-manager`.', file=sys.stderr)
+        return 1
 
     desktop_filename = 'ArctisManagerSystray.desktop'
     src_dir = Path.home() / '.local' / 'share' / 'applications' / desktop_filename

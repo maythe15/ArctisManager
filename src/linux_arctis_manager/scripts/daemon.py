@@ -10,6 +10,11 @@ from types import FrameType
 
 from linux_arctis_manager.utils import project_version
 
+# Exit status when another lam-daemon already runs. The systemd unit lists it in
+# RestartPreventExitStatus, so a duplicate start does not loop into the unit's
+# start limit ("Start request repeated too quickly").
+EXIT_ALREADY_RUNNING = 3
+
 
 def _pid_file() -> Path:
     runtime_dir = os.environ.get('XDG_RUNTIME_DIR', '/tmp')
@@ -36,6 +41,20 @@ def _is_running(pid: int) -> bool:
         return True  # process exists but belongs to another user
 
 
+def _is_lam_daemon(pid: int) -> bool:
+    '''
+    Whether the process looks like a lam-daemon. A PID file left behind by a
+    killed daemon can point at an unrelated process once the PID is reused.
+    When the command line cannot be read, assume it is a daemon.
+    '''
+    try:
+        cmdline = Path(f'/proc/{pid}/cmdline').read_bytes()
+    except OSError:
+        return True
+
+    return b'lam-daemon' in cmdline or b'linux_arctis_manager' in cmdline
+
+
 def _write_pid() -> None:
     _pid_file().write_text(str(os.getpid()))
 
@@ -47,7 +66,8 @@ def _remove_pid() -> None:
 def check_single_instance(replace: bool) -> None:
     existing_pid = _read_existing_pid()
 
-    if existing_pid is None or not _is_running(existing_pid):
+    if (existing_pid is None or existing_pid == os.getpid()
+            or not _is_running(existing_pid) or not _is_lam_daemon(existing_pid)):
         return
 
     if not replace:
@@ -56,7 +76,7 @@ def check_single_instance(replace: bool) -> None:
             "Use --replace to stop the running instance and start a new one.",
             file=sys.stderr,
         )
-        sys.exit(1)
+        sys.exit(EXIT_ALREADY_RUNNING)
 
     print(f"Replacing running lam-daemon instance (PID {existing_pid})...", file=sys.stderr)
     try:

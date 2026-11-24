@@ -35,6 +35,7 @@ Type=simple
 ExecStart=__HOME__/.local/share/pipx/venvs/linux-arctis-manager/bin/lam-daemon
 Restart=on-failure
 RestartSec=1
+RestartPreventExitStatus=3
 StartLimitIntervalSec=60
 StartLimitBurst=60
 

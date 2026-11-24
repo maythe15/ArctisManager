@@ -11,6 +11,8 @@ from linux_arctis_manager.constants import (
 )
 
 try:
+    import pulsectl
+
     from linux_arctis_manager.pactl import PulseAudioManager
 except FileNotFoundError as exc:
     pytest.skip(f'PulseAudio shared library is not available: {exc}', allow_module_level=True)
@@ -417,3 +419,39 @@ def test_virtual_endpoint_statuses_report_custom_mix_groups():
     assert by_node[PULSE_AUX_NODE_NAME]['mix_group'] == 'chat'
     assert by_node[PULSE_GAME_NODE_NAME]['mix_group'] == 'media'
     assert by_node[PULSE_MICROPHONE_NODE_NAME]['mix_group'] == 'microphone'
+
+
+def test_connect_retries_until_pulse_server_is_up(monkeypatch):
+    import linux_arctis_manager.pactl as pactl_module
+
+    attempts = []
+    connection = object()
+
+    def fake_pulse(name):
+        attempts.append(name)
+        if len(attempts) < 3:
+            raise pulsectl.PulseError('connection refused')
+        return connection
+
+    monkeypatch.setattr(pactl_module.pulsectl, 'Pulse', fake_pulse)
+    monkeypatch.setattr(pactl_module.time, 'sleep', lambda _: None)
+    manager = PulseAudioManager.__new__(PulseAudioManager)
+    manager.logger = logging.getLogger('test')
+
+    assert manager._connect() is connection
+    assert len(attempts) == 3
+
+
+def test_connect_gives_up_after_max_attempts(monkeypatch):
+    import linux_arctis_manager.pactl as pactl_module
+
+    def fake_pulse(name):
+        raise pulsectl.PulseError('connection refused')
+
+    monkeypatch.setattr(pactl_module.pulsectl, 'Pulse', fake_pulse)
+    monkeypatch.setattr(pactl_module.time, 'sleep', lambda _: None)
+    manager = PulseAudioManager.__new__(PulseAudioManager)
+    manager.logger = logging.getLogger('test')
+
+    with pytest.raises(pulsectl.PulseError):
+        manager._connect()

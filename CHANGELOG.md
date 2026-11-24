@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GUI: the selected stream and output on the Routing page are no longer reset whenever settings refresh.
 - GUI: buttons, combo boxes, sliders, checkboxes and tabs now show a pointing-hand cursor when enabled.
 
+## [Unreleased]
+
+## Fixed
+- Opening the GUI no longer fails with `arctis-manager.service: Start request repeated too quickly`. The GUI and `lam-cli setup` reset a unit that hit its start limit before starting it, and report a failed start instead of crashing.
+- The daemon waits up to 30 seconds for the PulseAudio/PipeWire server at login instead of exiting at once. The unit now starts after `pipewire-pulse.service`.
+- A stale `lam-daemon.pid` whose PID was reused by another process no longer stops the daemon from starting. A daemon that finds another instance running exits with status 3, which systemd does not restart.
+
 ## [2.4.1]
 
 ## Added
