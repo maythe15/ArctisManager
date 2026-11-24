@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - D-Bus: each device setting in `settings_config` carries its YAML `section`.
 - Device YAML: optional `band_label` for equalizer band sliders (e.g. `32 Hz`), shown under the band on the Equalizer page.
 - Equalizer page: presets are chips styled like the rest of the app. While a fixed (non-Custom) preset is selected, the graph shows that preset's curve and is read-only; select Custom to edit the bands again. "Reset to flat" moved to the right of the Band Gains title.
+- GUI: Settings page controls restyled to match the rest of the app. The audio redirect settings are now in a General card, on/off switches are dark toggles that fill with the accent colour when on, and the output device picker matches the other dropdowns. Option buttons for `discrete_map` settings (e.g. Gain on the Device page) are now chips like the Equalizer presets, replacing the light segmented buttons.
 - Device YAML: optional `preset_bands` on an equalizer preset, giving the band values of each fixed preset for the Equalizer page. The Nova Pro Wireless uses the SteelSeries factory curves as HeadsetControl defines them for the Arctis Nova 7; they still need confirming against the Nova Pro station.
 
 ## Changed

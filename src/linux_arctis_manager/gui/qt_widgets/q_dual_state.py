@@ -17,7 +17,11 @@ class QDualState(QWidget):
         self.off_text = off_text
         self.on_text = on_text
 
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(10)
+
         self.status_label = QLabel(self.on_text if init_state == 'right' else self.off_text)
+        self.status_label.setObjectName('settingValue')
         self.toggle = QToggle(parent=self, is_checkbox=(not on_text))
         self.toggle.setChecked(init_state == 'right')
         self.toggle.checkStateChanged.connect(self.checkStateChanged)

@@ -108,14 +108,16 @@ class QMainApp(QBaseDesktopApp):
         self._refresh_equalizer({})
 
         if self.dbus_wrapper:
-            self.general_settings_widget = QSettingsWidget(self.settings_page, 'general', 'general')
+            self.general_settings_widget = QSettingsWidget(
+                self.general_settings_card, 'general', 'general', show_title=False,
+            )
             self.device_settings_widget = QSettingsWidget(
                 self.device_settings_card,
                 'device',
                 'device',
                 setting_filter=lambda config: not is_equalizer_setting(config),
             )
-            self.settings_page_content_layout.addWidget(self.general_settings_widget)
+            self.general_settings_card.layout().addWidget(self.general_settings_widget)
             self.device_settings_card.layout().addWidget(self.device_settings_widget)
             self.dbus_wrapper.sig_status.connect(self.status_widget.update_status)
             self.dbus_wrapper.sig_settings.connect(self.general_settings_widget.update_settings)
@@ -123,6 +125,9 @@ class QMainApp(QBaseDesktopApp):
         else:
             self.device_settings_card.layout().addWidget(self._muted_label(
                 'Demo mode uses sample metadata for the overview. Live device controls need the D-Bus service.'
+            ))
+            self.general_settings_card.layout().addWidget(self._muted_label(
+                'Audio redirect settings need the D-Bus service.'
             ))
 
         self.switch_panel('dashboard')
@@ -782,6 +787,9 @@ class QMainApp(QBaseDesktopApp):
         )
         service.layout().addWidget(self.service_detail_label)
         layout.addWidget(service)
+
+        self.general_settings_card = self._card('General')
+        layout.addWidget(self.general_settings_card)
 
         setup = self._card('Setup Checklist')
         self.setup_state_labels: dict[str, QLabel] = {}
@@ -1732,7 +1740,7 @@ class QMainApp(QBaseDesktopApp):
                 padding: 8px 10px;
                 text-align: left;
             }
-            #mixGroupChip, #presetChip {
+            #mixGroupChip, #presetChip, #optionChip {
                 background: #0f1419;
                 border: 1px solid #34465a;
                 border-radius: 12px;
@@ -1741,20 +1749,20 @@ class QMainApp(QBaseDesktopApp):
                 font-weight: 700;
                 padding: 4px 12px;
             }
-            #presetChip {
+            #presetChip, #optionChip {
                 border-radius: 14px;
                 font-size: 13px;
                 padding: 6px 14px;
             }
-            #mixGroupChip:hover, #presetChip:hover {
+            #mixGroupChip:hover, #presetChip:hover, #optionChip:hover {
                 border-color: #5fb3f3;
             }
-            #mixGroupChip:checked, #presetChip:checked {
+            #mixGroupChip:checked, #presetChip:checked, #optionChip:checked {
                 background: #22425f;
                 border-color: #5fb3f3;
                 color: #ffffff;
             }
-            #primaryAction, #secondaryAction, #profileNameInput, #profileCombo, #routeCombo {
+            #primaryAction, #secondaryAction, #profileNameInput, #profileCombo, #routeCombo, #settingCombo {
                 border-radius: 8px;
                 font-size: 13px;
                 min-height: 34px;
@@ -1789,12 +1797,12 @@ class QMainApp(QBaseDesktopApp):
                 border: 1px solid #2e3c4d;
                 color: #7f92a5;
             }
-            #profileNameInput, #profileCombo, #routeCombo {
+            #profileNameInput, #profileCombo, #routeCombo, #settingCombo {
                 background: #0f1419;
                 border: 1px solid #34465a;
                 color: #edf2f7;
             }
-            #profileNameInput:disabled, #profileCombo:disabled, #routeCombo:disabled {
+            #profileNameInput:disabled, #profileCombo:disabled, #routeCombo:disabled, #settingCombo:disabled {
                 color: #7f92a5;
             }
             #card {

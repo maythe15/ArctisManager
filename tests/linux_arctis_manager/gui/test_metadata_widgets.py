@@ -73,3 +73,26 @@ def test_settings_widget_renders_dbus_settings_metadata():
     assert 'Redirect Audio on Connect' in labels
     assert 'volume_preview' in labels
     assert len(widget.findChildren(QWidget, 'settingRow')) == 2
+
+
+def test_setting_controls_use_the_app_styles():
+    from PySide6.QtWidgets import QPushButton
+
+    from linux_arctis_manager.gui.qt_widgets.q_checkable_button_group import \
+        QCheckableButtonGroup
+    from linux_arctis_manager.gui.qt_widgets.q_toggle import (KNOB,
+                                                              LEFT_MARGIN,
+                                                              QToggle)
+
+    _app()
+    group = QCheckableButtonGroup()
+    group.addButton(value=0, label='low', selected=False)
+    group.addButton(value=1, label='high', selected=True)
+    buttons = group.findChildren(QPushButton)
+    assert [button.objectName() for button in buttons] == ['optionChip', 'optionChip']
+    assert group.styleSheet() == ''
+
+    toggle = QToggle()
+    toggle.setChecked(True)
+    # Initial state is drawn at once, not animated from the off position.
+    assert toggle.circle_position == toggle.width() - LEFT_MARGIN - KNOB

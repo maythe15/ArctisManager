@@ -198,6 +198,7 @@ class QSettingsWidget(QWidget):
 
         elif config.type == SettingType.SELECT:
             widget = QComboBox()
+            widget.setObjectName('settingCombo')
             options = self._option_lists.get(config.options_source, [])
             if options:
                 widget.addItems([o['name'] for o in options])
