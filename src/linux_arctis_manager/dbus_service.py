@@ -17,10 +17,13 @@ from linux_arctis_manager.constants import (DBUS_BUS_NAME,
                                             DBUS_STATUS_INTERFACE_NAME,
                                             DBUS_STATUS_OBJECT_PATH)
 from linux_arctis_manager.core import CoreEngine
+from linux_arctis_manager.dbus_compat import patch_dbus_next
 from linux_arctis_manager.pactl import TypedPulseSinkInfo
 from linux_arctis_manager.profiles import DeviceProfileStore, ProfileValue
 from linux_arctis_manager.settings import DeviceSettings, GeneralSettings
 
+
+patch_dbus_next()
 
 class ArctisManagerDbusConfigService(ServiceInterface):
     def __init__(self, core: CoreEngine):
@@ -174,6 +177,27 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
     def signal_settings_changed(self, settings_json_str: 's') -> 's': # type: ignore
         return settings_json_str
 
+    # Delay before broadcasting SettingsChanged, so a burst of changes (dragging a
+    # slider sends one SetSetting per tick) becomes a single signal with the final state.
+    SETTINGS_SIGNAL_DELAY = 0.1
+
+    def notify_settings_changed(self) -> None:
+        if getattr(self, '_settings_signal_pending', False):
+            return
+
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            self._emit_settings_changed()
+            return
+
+        self._settings_signal_pending = True
+        loop.call_later(self.SETTINGS_SIGNAL_DELAY, self._emit_settings_changed)
+
+    def _emit_settings_changed(self) -> None:
+        self._settings_signal_pending = False
+        self.signal_settings_changed(self.settings_to_json(self.core_engine.general_settings, self.core_engine.device_config, self.core_engine.device_settings))
+
     @method('GetSettings')
     def get_settings(self) -> 's': # type: ignore
         return self.settings_to_json(self.core_engine.general_settings, self.core_engine.device_config, self.core_engine.device_settings)
@@ -190,7 +214,7 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
     def move_application_route(self, stream_index: 'u', endpoint_node_name: 's') -> 'b': # type: ignore
         result = self.core_engine.pa_audio_manager.move_application_route(stream_index, endpoint_node_name)
         if result:
-            self.signal_settings_changed(self.settings_to_json(self.core_engine.general_settings, self.core_engine.device_config, self.core_engine.device_settings))
+            self.notify_settings_changed()
 
         return result
     
@@ -199,7 +223,7 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
         if not self.core_engine.set_mix_group(channel, group):
             return False
 
-        self.signal_settings_changed(self.settings_to_json(self.core_engine.general_settings, self.core_engine.device_config, self.core_engine.device_settings))
+        self.notify_settings_changed()
 
         return True
 
@@ -227,7 +251,7 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             setattr(self.core_engine.general_settings, setting, value)
             self.core_engine.general_settings.write_to_file()
 
-            self.signal_settings_changed(self.settings_to_json(self.core_engine.general_settings, self.core_engine.device_config, self.core_engine.device_settings))
+            self.notify_settings_changed()
 
             return True
         
@@ -246,7 +270,7 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
                 self.core_engine.device_settings.settings[setting] = value
                 self.core_engine.device_settings.write_to_file()
 
-                self.signal_settings_changed(self.settings_to_json(self.core_engine.general_settings, self.core_engine.device_config, self.core_engine.device_settings))
+                self.notify_settings_changed()
 
                 return True
 
@@ -272,7 +296,7 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
             return False
 
         self.core_engine.device_settings.write_to_file()
-        self.signal_settings_changed(self.settings_to_json(self.core_engine.general_settings, self.core_engine.device_config, self.core_engine.device_settings))
+        self.notify_settings_changed()
 
         return True
 
@@ -307,7 +331,7 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
         self.core_engine.device_settings.write_to_file()
         store.set_active_profile(profile_name)
-        self.signal_settings_changed(self.settings_to_json(self.core_engine.general_settings, self.core_engine.device_config, self.core_engine.device_settings))
+        self.notify_settings_changed()
 
         return True
     

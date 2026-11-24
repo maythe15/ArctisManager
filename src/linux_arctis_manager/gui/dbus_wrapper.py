@@ -15,6 +15,9 @@ from linux_arctis_manager.constants import (DBUS_BUS_NAME,
                                             DBUS_SETTINGS_OBJECT_PATH,
                                             DBUS_STATUS_INTERFACE_NAME,
                                             DBUS_STATUS_OBJECT_PATH)
+from linux_arctis_manager.dbus_compat import patch_dbus_next
+
+patch_dbus_next()
 
 
 class DbusWrapper(QObject):
