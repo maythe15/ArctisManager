@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Callable, Union
 
 from PySide6.QtCore import Signal
@@ -14,11 +13,9 @@ class QCheckableButtonGroup(QWidget):
         super().__init__(parent)
 
         self.widget_layout = QHBoxLayout()
-        self.widget_layout.setSpacing(0)
+        self.widget_layout.setSpacing(6)
         self.widget_layout.setContentsMargins(0, 0, 0, 0)
         self.setLayout(self.widget_layout)
-
-        self.setStyleSheet(Path(__file__).parent.joinpath('q_checkable_button_group.css').read_text('utf-8'))
 
         self.group = QButtonGroup(exclusive=True)
         self.buttons: list[QPushButton] = []
@@ -34,6 +31,7 @@ class QCheckableButtonGroup(QWidget):
         label_str = I18n.get_instance().translate(i18n_section, label)
 
         btn = QPushButton(label_str)
+        btn.setObjectName('optionChip')
         btn.setCheckable(True)
         btn.setProperty('value', value)
         if selected:
