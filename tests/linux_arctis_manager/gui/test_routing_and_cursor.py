@@ -46,13 +46,23 @@ class FakeBus:
         self.disconnected = False
         self.moves: list[tuple[int, str]] = []
         self.mix_groups: list[tuple[str, str]] = []
+        self.set_settings: list[tuple[str, str]] = []
         FakeBus.instances.append(self)
+
+    @property
+    def connected(self):
+        return self.loop is not None and not self.disconnected
 
     async def connect(self):
         self.loop = asyncio.get_running_loop()
         return self
 
+    def _check_loop(self):
+        # A real dbus-next bus only works on the loop that created it.
+        assert asyncio.get_running_loop() is self.loop
+
     async def introspect(self, *_):
+        self._check_loop()
         return None
 
     def get_proxy_object(self, *_):
@@ -61,30 +71,48 @@ class FakeBus:
     def get_interface(self, _name):
         return self
 
+    async def call(self, message):
+        self._check_loop()
+        self.set_settings.append(tuple(message.body))
+        return None
+
     async def call_move_application_route(self, stream_index, endpoint_node_name):
-        # A real dbus-next bus only works on the loop that created it.
-        assert asyncio.get_running_loop() is self.loop
+        self._check_loop()
         self.moves.append((stream_index, endpoint_node_name))
         return True
 
     async def call_set_mix_group(self, channel, group):
-        assert asyncio.get_running_loop() is self.loop
+        self._check_loop()
         self.mix_groups.append((channel, group))
         return True
 
     async def call_get_settings(self):
-        assert asyncio.get_running_loop() is self.loop
+        self._check_loop()
         return '{}'
 
     def disconnect(self):
         self.disconnected = True
 
 
-def test_move_application_route_uses_a_bus_bound_to_its_own_loop(monkeypatch):
-    _app()
+@pytest.fixture
+def fake_bus(monkeypatch):
     FakeBus.instances = []
     monkeypatch.setattr(dbus_wrapper_module, 'MessageBus', FakeBus)
+    monkeypatch.setattr(DbusWrapper, '_bus', None)
+    monkeypatch.setattr(DbusWrapper, '_interfaces', {})
+    return FakeBus
 
+
+def _drain_dbus_loop() -> None:
+    '''Wait until every request queued so far on the shared D-Bus loop has run.'''
+    async def noop() -> None:
+        return None
+
+    asyncio.run_coroutine_threadsafe(noop(), DbusWrapper._get_loop()).result(5)
+
+
+def test_move_application_route_reuses_one_bus(fake_bus):
+    _app()
     wrapper = DbusWrapper()
     results = []
     done = Event()
@@ -95,24 +123,20 @@ def test_move_application_route_uses_a_bus_bound_to_its_own_loop(monkeypatch):
 
     wrapper.sig_route_moved.connect(on_moved, Qt.ConnectionType.DirectConnection)
 
-    # Two consecutive requests run in separate threads/loops; both must succeed.
     wrapper.move_application_route(55, 'Arctis_Chat')
     assert done.wait(5)
     done.clear()
     wrapper.move_application_route(56, 'Arctis_Game')
     assert done.wait(5)
+    _drain_dbus_loop()
 
     assert results == [(True, 55, 'Arctis_Chat'), (True, 56, 'Arctis_Game')]
-    move_buses = [bus for bus in FakeBus.instances if bus.moves]
-    assert [bus.moves for bus in move_buses] == [[(55, 'Arctis_Chat')], [(56, 'Arctis_Game')]]
-    assert all(bus.disconnected for bus in move_buses)
+    assert len(fake_bus.instances) == 1
+    assert fake_bus.instances[0].moves == [(55, 'Arctis_Chat'), (56, 'Arctis_Game')]
 
 
-def test_set_mix_group_uses_a_bus_bound_to_its_own_loop(monkeypatch):
+def test_set_mix_group_uses_the_shared_bus(fake_bus):
     _app()
-    FakeBus.instances = []
-    monkeypatch.setattr(dbus_wrapper_module, 'MessageBus', FakeBus)
-
     wrapper = DbusWrapper()
     settings_received = Event()
     wrapper.sig_settings.connect(lambda _: settings_received.set(), Qt.ConnectionType.DirectConnection)
@@ -120,7 +144,31 @@ def test_set_mix_group_uses_a_bus_bound_to_its_own_loop(monkeypatch):
     wrapper.set_mix_group('aux', 'chat')
     assert settings_received.wait(5)
 
-    assert [bus.mix_groups for bus in FakeBus.instances if bus.mix_groups] == [[('aux', 'chat')]]
+    assert len(fake_bus.instances) == 1
+    assert fake_bus.instances[0].mix_groups == [('aux', 'chat')]
+
+
+def test_slider_burst_of_set_setting_uses_one_connection_in_order(fake_bus):
+    # Dragging a slider sends one SetSetting per tick; this used to open (and leak)
+    # a connection per call until the GUI hit "too many open files".
+    for value in range(200):
+        DbusWrapper.change_setting('eq_band_1', value)
+    _drain_dbus_loop()
+
+    assert len(fake_bus.instances) == 1
+    assert fake_bus.instances[0].set_settings == [('eq_band_1', str(value)) for value in range(200)]
+
+
+def test_dropped_bus_is_replaced(fake_bus):
+    DbusWrapper.change_setting('gain', 1)
+    _drain_dbus_loop()
+    fake_bus.instances[0].disconnected = True
+
+    DbusWrapper.change_setting('gain', 2)
+    _drain_dbus_loop()
+
+    assert len(fake_bus.instances) == 2
+    assert fake_bus.instances[1].set_settings == [('gain', '2')]
 
 
 def test_route_move_feedback_survives_settings_refresh():
