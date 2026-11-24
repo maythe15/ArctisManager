@@ -27,6 +27,15 @@ device:
     - [0x06, 0xbf, 'settings.mic_led_brightness']
     - [0x06, 0x49, 0x01] # Enable ChatMix (dial reported to the host)
     - ['status.request']
+  # Settings changed on the base station itself, reported back so the app follows them
+  settings_feedback:
+    - starts_with: 0x072e   # 07 2e <preset>
+      setting: eq_preset
+      value_index: 2
+    - starts_with: 0x0731   # 07 31 <band 1-10> <value>
+      setting_index: 2
+      settings: [eq_band_1, eq_band_2, eq_band_3, eq_band_4, eq_band_5, eq_band_6, eq_band_7, eq_band_8, eq_band_9, eq_band_10]
+      value_index: 3
   status:
     request: 0x06b0
     response_mapping:

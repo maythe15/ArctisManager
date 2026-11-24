@@ -50,6 +50,10 @@ class ObservableDict(dict[K, V], Generic[K, V], JsonSerializable):
     def add_observer(self, observer: Callable[[K, V], None]):
         self._observers.append(observer)
 
+    def set_silently(self, key, value):
+        '''Set a value without notifying observers.'''
+        super().__setitem__(key, value)
+
     def __setitem__(self, key, value):
         old_value = self.get(key, None)
 

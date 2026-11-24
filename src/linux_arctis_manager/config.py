@@ -136,6 +136,43 @@ class ConfigStatus:
             **{k: v for k, v in mapping.items() if k != 'starts_with'},
         ) for mapping in raw_mappings]
 
+class ConfigSettingFeedback:
+    '''
+    A packet the device sends when a setting is changed on the device itself (e.g. the base
+    station's own menu), so the stored setting can follow it.
+
+    Either `setting` names the setting, or `setting_index` is the byte that selects one of
+    `settings` (1-based). `value_index` is the byte holding the value.
+    '''
+    def __init__(self, starts_with: int, value_index: int, setting: str | None = None,
+                 setting_index: int | None = None, settings: list[str] | None = None):
+        if setting is None and (setting_index is None or not settings):
+            raise ValueError("settings_feedback entries need 'setting', or 'setting_index' and 'settings'")
+        self.starts_with = starts_with
+        self.value_index = value_index
+        self.setting = setting
+        self.setting_index = setting_index
+        self.settings = settings or []
+
+    def match(self, packet: list[int]) -> tuple[str, int] | None:
+        prefix = f'{self.starts_with:02x}'
+        if len(prefix) % 2:
+            prefix = f'0{prefix}'
+        if not ''.join(f'{b:02x}' for b in packet).startswith(prefix) or self.value_index >= len(packet):
+            return None
+
+        if self.setting is not None:
+            return self.setting, packet[self.value_index]
+
+        assert self.setting_index is not None
+        if self.setting_index >= len(packet):
+            return None
+        selector = packet[self.setting_index]
+        if not 1 <= selector <= len(self.settings):
+            return None
+
+        return self.settings[selector - 1], packet[self.value_index]
+
 @dataclass
 class OnlineStatusConfig:
     status_variable: str
@@ -150,6 +187,7 @@ class DeviceConfiguration:
     command_padding: ConfigPadding
     device_init: list[list[int|str]] | None
     device_shutdown: list[list[int|str]] | None
+    settings_feedback: list[ConfigSettingFeedback]
     status: ConfigStatus | None
     status_parse: dict[str, ConfigStatusParser]
     online_status: OnlineStatusConfig | None
@@ -190,6 +228,7 @@ class DeviceConfiguration:
         # Sent when the daemon stops, to hand control back to the device itself
         # (for example re-enabling the base station's own EQ menu).
         self.device_shutdown = raw_config.get('device_shutdown', None)
+        self.settings_feedback = [ConfigSettingFeedback(**entry) for entry in raw_config.get('settings_feedback', None) or []]
         
         raw_status = raw_config.get('status', {})
         if raw_status:

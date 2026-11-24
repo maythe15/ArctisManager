@@ -87,6 +87,8 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
         super().__init__(DBUS_SETTINGS_INTERFACE_NAME)
         self.core_engine = core
         self.logger = logging.getLogger('ArctisManagerDbusSettingsService')
+        # Settings changed on the device itself (e.g. the base station's EQ menu)
+        self.core_engine.register_settings_observer(lambda _settings: self.notify_settings_changed())
 
     def _device_profile_store(self) -> DeviceProfileStore | None:
         device = self.core_engine.usb_device

@@ -27,6 +27,16 @@ device:
   device_shutdown: # OPTIONAL, commands sent when the daemon stops, to hand control back to the device
                    # (same tokens as device_init). Use it to undo init commands the device remembers.
     - [0x06, 0x00]
+  settings_feedback: # OPTIONAL, packets the device sends when a setting is changed on the device itself
+                     # (e.g. the base station's own EQ menu). The stored setting follows it without
+                     # sending a command back, and clients get a SettingsChanged signal.
+    - starts_with: 0x072e   # packet prefix
+      setting: eq_preset    # the setting to update...
+      value_index: 2        # ...from this byte
+    - starts_with: 0x0731
+      setting_index: 2      # or: this byte selects one of `settings` (1-based)
+      settings: [eq_band_1, eq_band_2, eq_band_3]
+      value_index: 3
   status:
     request: 0x06b0 # Message to be sent to request the device's status
     response_mapping: # A list of objects having

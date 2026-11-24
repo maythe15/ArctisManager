@@ -11,6 +11,7 @@ def test_settings_payload_includes_connected_device_identity():
         general_settings=SimpleNamespace(settings_config=[], to_dict=lambda: {}),
         device_settings=SimpleNamespace(settings={}),
         pa_audio_manager=SimpleNamespace(),
+        register_settings_observer=lambda _observer: None,
     )
     service = ArctisManagerDbusSettingsService(core)
     service._profile_metadata = lambda: {'available': [], 'active': 'Default'}
@@ -61,6 +62,7 @@ def _mix_group_service(set_mix_group_result: bool):
         general_settings=general_settings,
         device_settings=None,
         pa_audio_manager=SimpleNamespace(),
+        register_settings_observer=lambda _observer: None,
         set_mix_group=set_mix_group,
     )
     service = ArctisManagerDbusSettingsService(core)

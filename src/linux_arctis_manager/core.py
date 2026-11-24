@@ -157,6 +157,8 @@ class CoreEngine:
                 
                 self.manage_mix_change()
 
+            self.apply_settings_feedback(read_input)
+
             await asyncio.sleep(0.1)
         except usb.core.USBError as e:
             if e.errno in _UNRECOVERABLE_USB_ERRNOS:
@@ -308,6 +310,30 @@ class CoreEngine:
 
         return online_status_config is None or parsed.get(online_status_config.status_variable) == online_status_config.online_value
     
+    def register_settings_observer(self, observer: Callable[[DeviceSettings], None]):
+        if observer not in self.device_settings_observers:
+            self.device_settings_observers.append(observer)
+
+    def apply_settings_feedback(self, packet: list[int]) -> None:
+        '''Follow settings changed on the device itself, without sending them back to it.'''
+        if self.device_config is None or self.device_settings is None or not self.device_config.settings_feedback:
+            return
+
+        changed = False
+        for feedback in self.device_config.settings_feedback:
+            if (match := feedback.match(packet)) is None:
+                continue
+            name, value = match
+            if name not in self.device_settings.settings or self.device_settings.get(name) == value:
+                continue
+            self.device_settings.settings.set_silently(name, value)
+            changed = True
+
+        if changed:
+            self.device_settings.write_to_file()
+            for observer in self.device_settings_observers:
+                observer(self.device_settings)
+
     def register_status_observer(self, observer: Callable[[dict[str, int]], None]):
         if observer not in self.device_status_observers:
             self.device_status_observers.append(observer)
