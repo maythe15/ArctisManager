@@ -1,5 +1,5 @@
 import logging
-from typing import Literal
+from typing import Any, Literal
 
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QIcon
@@ -31,6 +31,7 @@ from linux_arctis_manager.gui.view_models import (
     equalizer_model,
     header_context_summary,
     is_equalizer_band,
+    is_equalizer_preset,
     is_equalizer_setting,
     mix_group_assignments,
     mixer_levels,
@@ -92,12 +93,14 @@ class QMainApp(QBaseDesktopApp):
         self._refresh_dashboard_settings({})
         self._refresh_dashboard_control_surface()
 
-        # Preset (non-band) equalizer controls. Built in demo mode too, where changes stay local.
+        # Other equalizer controls (neither presets nor bands). Built in demo mode too, where changes stay local.
         self.equalizer_controls_widget = QSettingsWidget(
             self.equalizer_controls_card,
             'equalizer',
             'device',
-            setting_filter=lambda config: is_equalizer_setting(config) and not is_equalizer_band(config),
+            setting_filter=lambda config: (
+                is_equalizer_setting(config) and not is_equalizer_band(config) and not is_equalizer_preset(config)
+            ),
             on_change=None if self.dbus_wrapper else self._apply_local_setting,
             show_title=False,
         )
@@ -486,30 +489,40 @@ class QMainApp(QBaseDesktopApp):
         self.equalizer_empty_label = self._muted_label('Connect a supported headset to show its equalizer.')
         layout.addWidget(self.equalizer_empty_label)
 
-        self.equalizer_controls_card = self._card('Preset')
+        # Preset chips, one row per preset control; rebuilt when the device's presets change.
+        self.equalizer_presets_card = self._card('Preset')
+        self.equalizer_preset_rows = QVBoxLayout()
+        self.equalizer_preset_rows.setContentsMargins(0, 0, 0, 0)
+        self.equalizer_preset_rows.setSpacing(10)
+        self.equalizer_presets_card.layout().addLayout(self.equalizer_preset_rows)
+        self.equalizer_preset_buttons: dict[tuple[str, int], QPushButton] = {}
+        self._equalizer_preset_layout_key: tuple[object, ...] = ()
+        layout.addWidget(self.equalizer_presets_card)
+
+        self.equalizer_controls_card = self._card('Other Controls')
         layout.addWidget(self.equalizer_controls_card)
 
-        self.equalizer_bands_card = self._card('Band Gains')
+        self.equalizer_flat_button = QPushButton('Reset to flat')
+        self.equalizer_flat_button.setObjectName('cardAction')
+        self.equalizer_flat_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.equalizer_flat_button.setToolTip('Set every band to 0 dB.')
+        self.equalizer_flat_button.clicked.connect(self._on_equalizer_flat_clicked)
+        self.equalizer_flat_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.equalizer_bands_card = self._card('Band Gains', action=self.equalizer_flat_button)
+
+        self.equalizer_hint_label = self._muted_label('')
+        self.equalizer_hint_label.setObjectName('equalizerHint')
+        self.equalizer_bands_card.layout().addWidget(self.equalizer_hint_label)
+
         self.equalizer_graph = QEqualizerGraph()
         self.equalizer_graph.band_changed.connect(self._on_equalizer_band_changed)
         self.equalizer_bands_card.layout().addWidget(self.equalizer_graph)
 
-        footer = QHBoxLayout()
-        footer.setSpacing(12)
-        self.equalizer_hint_label = self._muted_label('')
-        self.equalizer_hint_label.setObjectName('equalizerHint')
-        footer.addWidget(self.equalizer_hint_label, 1)
-        self.equalizer_flat_button = QPushButton('Reset to flat')
-        self.equalizer_flat_button.setObjectName('secondaryAction')
-        self.equalizer_flat_button.clicked.connect(self._on_equalizer_flat_clicked)
-        self.equalizer_flat_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        footer.addWidget(self.equalizer_flat_button, 0, Qt.AlignmentFlag.AlignVCenter)
-        self.equalizer_bands_card.layout().addLayout(footer)
-
-        self.equalizer_bands_card.layout().addWidget(self._muted_label(
+        self.equalizer_help_label = self._muted_label(
             'Drag a band, scroll over it, or select it with the arrow keys and adjust with up/down. '
             'Double-click a band to reset it.'
-        ))
+        )
+        self.equalizer_bands_card.layout().addWidget(self.equalizer_help_label)
         layout.addWidget(self.equalizer_bands_card)
 
         return page
@@ -829,7 +842,8 @@ class QMainApp(QBaseDesktopApp):
 
         return scroll, content_layout
 
-    def _card(self, title: str) -> QFrame:
+    def _card(self, title: str, action: QWidget | None = None) -> QFrame:
+        '''A titled card; `action` (e.g. a button) is placed at the right of the title.'''
         card = QFrame()
         card.setObjectName('card')
         card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
@@ -841,7 +855,14 @@ class QMainApp(QBaseDesktopApp):
 
         label = QLabel(title)
         label.setObjectName('cardTitle')
-        layout.addWidget(label)
+        if action is None:
+            layout.addWidget(label)
+        else:
+            header = QHBoxLayout()
+            header.setSpacing(12)
+            header.addWidget(label, 1)
+            header.addWidget(action, 0, Qt.AlignmentFlag.AlignVCenter)
+            layout.addLayout(header)
 
         return card
 
@@ -1215,24 +1236,88 @@ class QMainApp(QBaseDesktopApp):
 
         self.equalizer_empty_label.setText(model['empty_message'])
         self.equalizer_empty_label.setVisible(not model['available'])
+        self.equalizer_presets_card.setVisible(bool(model['presets']))
         self.equalizer_controls_card.setVisible(bool(model['controls']))
         self.equalizer_bands_card.setVisible(bool(model['bands']))
         self.device_equalizer_note.setVisible(model['available'])
+        self._refresh_equalizer_presets(model['presets'])
         settings_config = settings.get('settings_config', {})
         self.equalizer_controls_widget.update_settings({
             'device': settings.get('device', {}),
             'settings_config': {name: settings_config[name] for name in model['controls']},
         })
 
+        # Lock before updating the bands, so a pending local edit is not kept over the preset curve.
+        self.equalizer_graph.set_locked(model['locked'])
         self.equalizer_graph.set_bands(model['bands'], model['scale'], model['baseline'])
         self.equalizer_hint_label.setText(model['hint'])
         self.equalizer_hint_label.setVisible(bool(model['hint']))
-        baseline = model['baseline']
-        self.equalizer_flat_button.setEnabled(
-            baseline is not None and any(band['value'] != round(baseline) for band in model['bands'])
+        self.equalizer_help_label.setVisible(not model['locked'])
+        self.equalizer_flat_button.setEnabled(model['can_reset'])
+
+    def _refresh_equalizer_presets(self, presets: list[dict[str, Any]]) -> None:
+        layout_key = tuple(
+            (preset['name'], preset['label'], tuple((o['value'], o['label']) for o in preset['options']))
+            for preset in presets
         )
+        if layout_key != self._equalizer_preset_layout_key:
+            self._equalizer_preset_layout_key = layout_key
+            self.equalizer_preset_buttons = {}
+            while self.equalizer_preset_rows.count():
+                item = self.equalizer_preset_rows.takeAt(0)
+                widget = item.widget() if item is not None else None
+                if widget is not None:
+                    widget.deleteLater()
+
+            for preset in presets:
+                row = QWidget()
+                row_layout = QVBoxLayout()
+                row_layout.setContentsMargins(0, 0, 0, 0)
+                row_layout.setSpacing(6)
+                row.setLayout(row_layout)
+                if len(presets) > 1:
+                    label = QLabel(preset['label'])
+                    label.setObjectName('settingLabel')
+                    row_layout.addWidget(label)
+
+                chips = QHBoxLayout()
+                chips.setContentsMargins(0, 0, 0, 0)
+                chips.setSpacing(6)
+                for option in preset['options']:
+                    button = QPushButton(option['label'])
+                    button.setObjectName('presetChip')
+                    button.setCheckable(True)
+                    button.setCursor(Qt.CursorShape.PointingHandCursor)
+                    button.clicked.connect(
+                        lambda _, name=preset['name'], value=option['value']: self._on_equalizer_preset_clicked(name, value)
+                    )
+                    chips.addWidget(button)
+                    self.equalizer_preset_buttons[(preset['name'], option['value'])] = button
+                chips.addStretch(1)
+                row_layout.addLayout(chips)
+                self.equalizer_preset_rows.addWidget(row)
+
+        for preset in presets:
+            for option in preset['options']:
+                button = self.equalizer_preset_buttons.get((preset['name'], option['value']))
+                if button is not None:
+                    button.setChecked(option['value'] == preset['value'])
+
+    def _on_equalizer_preset_clicked(self, name: str, value: int) -> None:
+        current = next((preset for preset in self.equalizer_model['presets'] if preset['name'] == name), None)
+        if current is None or current['value'] == value:
+            # Clicking the active chip would uncheck it; keep the selection.
+            self._refresh_equalizer_presets(self.equalizer_model['presets'])
+            return
+        for (preset_name, option_value), button in self.equalizer_preset_buttons.items():
+            if preset_name == name:
+                button.setChecked(option_value == value)
+        self._change_equalizer_setting(name, value)
 
     def _on_equalizer_band_changed(self, name: str, value: int) -> None:
+        self._change_equalizer_setting(name, value)
+
+    def _change_equalizer_setting(self, name: str, value: int) -> None:
         if self.dbus_wrapper:
             from linux_arctis_manager.gui.dbus_wrapper import DbusWrapper
 
@@ -1242,7 +1327,7 @@ class QMainApp(QBaseDesktopApp):
 
     def _on_equalizer_flat_clicked(self) -> None:
         baseline = self.equalizer_model.get('baseline')
-        if baseline is None:
+        if baseline is None or self.equalizer_model.get('locked'):
             return
         for band in self.equalizer_model['bands']:
             if band['value'] != round(baseline):
@@ -1647,7 +1732,7 @@ class QMainApp(QBaseDesktopApp):
                 padding: 8px 10px;
                 text-align: left;
             }
-            #mixGroupChip {
+            #mixGroupChip, #presetChip {
                 background: #0f1419;
                 border: 1px solid #34465a;
                 border-radius: 12px;
@@ -1656,10 +1741,15 @@ class QMainApp(QBaseDesktopApp):
                 font-weight: 700;
                 padding: 4px 12px;
             }
-            #mixGroupChip:hover {
+            #presetChip {
+                border-radius: 14px;
+                font-size: 13px;
+                padding: 6px 14px;
+            }
+            #mixGroupChip:hover, #presetChip:hover {
                 border-color: #5fb3f3;
             }
-            #mixGroupChip:checked {
+            #mixGroupChip:checked, #presetChip:checked {
                 background: #22425f;
                 border-color: #5fb3f3;
                 color: #ffffff;
@@ -1682,7 +1772,19 @@ class QMainApp(QBaseDesktopApp):
                 color: #dbe7f3;
                 font-weight: 700;
             }
-            #primaryAction:disabled, #secondaryAction:disabled {
+            #cardAction {
+                background: #1c2733;
+                border: 1px solid #34465a;
+                border-radius: 8px;
+                color: #dbe7f3;
+                font-size: 12px;
+                font-weight: 700;
+                padding: 4px 12px;
+            }
+            #cardAction:hover {
+                border-color: #5fb3f3;
+            }
+            #primaryAction:disabled, #secondaryAction:disabled, #cardAction:disabled {
                 background: #1c2733;
                 border: 1px solid #2e3c4d;
                 color: #7f92a5;

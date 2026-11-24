@@ -108,14 +108,19 @@ device:
 
 ### Equalizer sections
 
-Settings in a section whose name starts with `equalizer` (e.g. `equalizer`, `equalizer_bluetooth`) are shown on the GUI's Equalizer page instead of the Device page. In those sections, `slider` settings are drawn as the bands of a graphic equalizer, in YAML order, and every other setting (e.g. a preset `discrete_map`) is shown as a regular control above it. Band sliders can set an optional `band_label` (e.g. `band_label: 32 Hz`) shown under the band; band levels are labelled with the slider's `values_mapping` (e.g. `0x14: '0.0 dB'`), and the value mapped to `0 dB` is drawn as the neutral line. If a preset's `values_mapping` has a `custom` value, the page notes when another preset is selected, since band gains usually only apply to the custom preset.
+Settings in a section whose name starts with `equalizer` (e.g. `equalizer`, `equalizer_bluetooth`) are shown on the GUI's Equalizer page instead of the Device page. In those sections, `slider` settings are drawn as the bands of a graphic equalizer, in YAML order, and every other setting is shown as a regular control above it. Band sliders can set an optional `band_label` (e.g. `band_label: 32 Hz`) shown under the band; band levels are labelled with the slider's `values_mapping` (e.g. `0x14: '0.0 dB'`), and the value mapped to `0 dB` is drawn as the neutral line.
+
+A `discrete_map` whose `values_mapping` has a `custom` value is treated as a preset and shown as a row of chips. Band gains usually only apply to the custom preset, so while the first preset control of the page is set to anything else, the bands are read-only. The optional `preset_bands` maps a preset value to its band values (raw slider values, in band order), and the graph shows that curve while the preset is active. Without it, the graph keeps the stored custom values and notes that the preset's curve is not known.
 
 ```yaml
   settings:
     equalizer:
       eq_preset:
         type: discrete_map
-        values_mapping: { 0x00: flat, 0x04: custom }
+        values_mapping: { 0x00: flat, 0x01: bass_boost, 0x04: custom }
+        preset_bands:
+          0x00: [0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14]
+          0x01: [0x1b, 0x1f, 0x1c, 0x16, 0x11, 0x11, 0x12, 0x12, 0x12, 0x12]
         # ...
       eq_band_1:
         type: slider

@@ -6,6 +6,7 @@ from linux_arctis_manager.audio_endpoints import (ASSIGNABLE_MIX_GROUPS,
                                                   VIRTUAL_SINK_ENDPOINTS,
                                                   MixGroup,
                                                   normalize_mix_groups)
+from linux_arctis_manager.i18n import I18n
 
 StatusPayload = dict[str, dict[str, dict[str, str | int]]]
 
@@ -1045,6 +1046,11 @@ def is_equalizer_band(config: object) -> bool:
     return isinstance(config, dict) and is_equalizer_setting(config) and config.get('type') == 'slider'
 
 
+def is_equalizer_preset(config: object) -> bool:
+    """Presets are the equalizer `discrete_map`s with a `custom` value; the Equalizer page shows them as chips."""
+    return isinstance(config, dict) and is_equalizer_setting(config) and _equalizer_preset('', config, {}) is not None
+
+
 def _int_or(value: object, fallback: int) -> int:
     try:
         return int(float(value))  # pyright: ignore[reportArgumentType]
@@ -1093,20 +1099,42 @@ def _equalizer_baseline(config: dict, minimum: int, maximum: int) -> float:
     return (minimum + maximum) / 2
 
 
-def _custom_preset_hint(controls: list[str], device_settings: dict, settings_config: dict) -> str:
+def _equalizer_preset(name: str, config: dict, device_settings: dict) -> dict[str, Any] | None:
     """
-    Some devices only apply band gains while a "custom" preset is selected. When a preset control
-    offers such a value and another one is active, say so rather than silently ignoring the bands.
+    A preset control is a `discrete_map` of an equalizer section with a `custom` value: the device
+    applies the band gains only while Custom is selected, and plays a fixed curve otherwise.
+    `preset_bands` optionally gives that curve (band values, in band order) for each fixed preset.
     """
-    for name in controls:
-        config = settings_config.get(name, {})
-        values_mapping = config.get('values_mapping', {}) if isinstance(config, dict) else {}
-        if not isinstance(values_mapping, dict):
-            continue
-        custom_values = [str(key) for key, label in values_mapping.items() if str(label).lower() == 'custom']
-        if custom_values and str(device_settings.get(name)) not in custom_values:
-            return 'Band gains apply while the Custom preset is selected.'
-    return ''
+    if config.get('type') != 'discrete_map':
+        return None
+    values_mapping = config.get('values_mapping', {})
+    if not isinstance(values_mapping, dict):
+        return None
+    custom_value = next(
+        (_int_or(key, -1) for key, label in values_mapping.items() if str(label).strip().lower() == 'custom'),
+        None,
+    )
+    if custom_value is None:
+        return None
+
+    value = _int_or(device_settings.get(name), custom_value)
+    options = [
+        {'value': _int_or(key, 0), 'label': I18n.translate('settings_values', str(label).strip())}
+        for key, label in values_mapping.items()
+    ]
+    current = next((option for option in options if option['value'] == value), None)
+    preset_bands = config.get('preset_bands', {})
+    curve = preset_bands.get(str(value)) if isinstance(preset_bands, dict) else None
+    return {
+        'name': name,
+        'label': I18n.translate('settings', name),
+        'value': value,
+        'custom_value': custom_value,
+        'is_custom': value == custom_value,
+        'current_label': current['label'] if current else str(value),
+        'options': options,
+        'curve': [_int_or(level, 0) for level in curve] if isinstance(curve, list) else None,
+    }
 
 
 def equalizer_model(settings: dict | None) -> dict:
@@ -1119,6 +1147,7 @@ def equalizer_model(settings: dict | None) -> dict:
     if not isinstance(settings_config, dict):
         settings_config = {}
 
+    presets: list[dict[str, Any]] = []
     controls: list[str] = []
     bands: list[dict[str, Any]] = []
     scale: list[dict[str, str | int]] = []
@@ -1127,7 +1156,11 @@ def equalizer_model(settings: dict | None) -> dict:
         if name not in device_settings or not is_equalizer_setting(config):
             continue
         if not is_equalizer_band(config):
-            controls.append(name)
+            preset = _equalizer_preset(name, config, device_settings)
+            if preset is not None:
+                presets.append(preset)
+            else:
+                controls.append(name)
             continue
 
         minimum = _int_or(config.get('min'), 0)
@@ -1151,19 +1184,46 @@ def equalizer_model(settings: dict | None) -> dict:
             scale = _equalizer_scale(config)
             baseline = _equalizer_baseline(config, minimum, maximum)
 
+    # The first preset control decides whether the bands are editable. While a fixed preset is
+    # active, the graph shows that preset's curve (when the YAML provides it) and is locked.
+    locked = bool(bands and presets and not presets[0]['is_custom'])
+    hint = ''
+    if locked:
+        preset = presets[0]
+        curve = preset['curve']
+        if curve is not None and len(curve) == len(bands):
+            for band, level in zip(bands, curve):
+                level = min(max(level, band['min']), band['max'])
+                band['value'] = level
+                band['value_label'] = band['value_labels'].get(level, str(level))
+            hint = f"{preset['current_label']} is a fixed preset. Select Custom to adjust the bands."
+        else:
+            hint = (
+                f"{preset['current_label']} is a fixed preset; its curve is not known, so the bands show "
+                'the Custom settings. Select Custom to adjust them.'
+            )
+
+    can_reset = (
+        bool(bands) and not locked and baseline is not None
+        and any(band['value'] != round(baseline) for band in bands)
+    )
+
     if not device_settings:
         empty_message = 'Connect a supported headset to show its equalizer.'
-    elif not controls and not bands:
+    elif not presets and not controls and not bands:
         empty_message = 'The connected headset does not expose equalizer controls.'
     else:
         empty_message = ''
 
     return {
-        'available': bool(controls or bands),
+        'available': bool(presets or controls or bands),
+        'presets': presets,
         'controls': controls,
         'bands': bands,
         'scale': scale,
         'baseline': baseline,
-        'hint': _custom_preset_hint(controls, device_settings, settings_config) if bands else '',
+        'locked': locked,
+        'can_reset': can_reset,
+        'hint': hint,
         'empty_message': empty_message,
     }

@@ -84,6 +84,21 @@ class QEqualizerGraph(QWidget):
         self.setAccessibleName(f'Equalizer, {len(self._bands)} bands')
         self.update()
 
+    def set_locked(self, locked: bool) -> None:
+        '''
+        Read-only mode, e.g. while a fixed preset is active: input is ignored and the graph is dimmed.
+        A change still being edited is committed first, so it is not lost or shown over the preset.
+        '''
+        if locked == (not self.isEnabled()):
+            return
+        if locked:
+            if self._dragging >= 0:
+                self._queue(self._dragging)
+                self._dragging = -1
+            self._commit_timer.stop()
+            self._commit_pending()
+        self.setEnabled(not locked)
+
     def bands(self) -> list[dict[str, Any]]:
         return [dict(band) for band in self._bands]
 
@@ -307,7 +322,7 @@ class QEqualizerGraph(QWidget):
         column_width = self._column_width()
         for index, band in enumerate(self._bands):
             x = self._band_x(index)
-            active = index in (self._selected, self._hovered, self._dragging)
+            active = self.isEnabled() and index in (self._selected, self._hovered, self._dragging)
             if index == self._selected and self.hasFocus() or index == self._dragging:
                 painter.fillRect(QRectF(x - column_width / 2 + 2, rect.top(), column_width - 4, rect.height()), COLOR_SELECTED_COLUMN)
 
@@ -384,7 +399,7 @@ class QEqualizerGraph(QWidget):
 
     def _paint_handles(self, painter: QPainter) -> None:
         for index, point in enumerate(self._curve_points()):
-            active = index in (self._selected, self._hovered, self._dragging)
+            active = self.isEnabled() and index in (self._selected, self._hovered, self._dragging)
             radius = HANDLE_RADIUS + (2 if active else 0)
             if index == self._dragging or (index == self._selected and self.hasFocus()):
                 ring = QColor(COLOR_ACCENT)
