@@ -55,6 +55,11 @@ device:
     - ['status.request']  # Get device status
     - [0x06, 0x20, 0x00]
     - [0x06, 0xb7, 0x00]
+  # Sent when the daemon stops. 0x8d 0x01 in device_init puts the base station in
+  # software-controlled mode (its own EQ menu is disabled, and the station remembers it);
+  # 0x8d 0x00 hands control back so the station's EQ works again without the app.
+  device_shutdown:
+    - [0x06, 0x8d, 0x00]
   status:
     request: 0x06b0
     response_mapping:

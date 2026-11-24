@@ -77,7 +77,21 @@ class CoreEngine:
     def stop(self):
         self.logger.info("Stopping CoreEngine...")
         self._stopping = True
+        self.shutdown_device()
         self.usb_devices_monitor.stop()
+
+    def shutdown_device(self) -> None:
+        '''Send the device's shutdown sequence so it works standalone again once the daemon is gone.'''
+        if self.usb_device is None or self.device_config is None or not self.device_config.device_shutdown:
+            return
+
+        self.logger.info("Handing control back to the device...")
+        try:
+            endpoint = self.get_command_endpoint_address()
+            for bytes in self.device_config.device_shutdown:
+                self.send_command(self.translate_init_bytes(bytes), endpoint, self.device_config.command_interface_index[1])
+        except Exception as e:
+            self.logger.warning("Device shutdown sequence failed: %s", e)
 
     def manage_mix_change(self):
         if not self.device_status or not self.device_config:

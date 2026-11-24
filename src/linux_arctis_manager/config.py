@@ -135,6 +135,7 @@ class DeviceConfiguration:
     listen_interface_indexes: list[int]
     command_padding: ConfigPadding
     device_init: list[list[int|str]] | None
+    device_shutdown: list[list[int|str]] | None
     status: ConfigStatus | None
     status_parse: dict[str, ConfigStatusParser]
     online_status: OnlineStatusConfig | None
@@ -171,9 +172,10 @@ class DeviceConfiguration:
         else:
             raise ValueError("Invalid configuration: 'device.command_padding' must be specified")
 
-        raw_device_init = raw_config.get('device_init', None)
-        if raw_device_init is not None:
-            self.device_init = raw_device_init
+        self.device_init = raw_config.get('device_init', None)
+        # Sent when the daemon stops, to hand control back to the device itself
+        # (for example re-enabling the base station's own EQ menu).
+        self.device_shutdown = raw_config.get('device_shutdown', None)
         
         raw_status = raw_config.get('status', {})
         if raw_status:

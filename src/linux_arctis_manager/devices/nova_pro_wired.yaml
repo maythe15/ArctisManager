@@ -33,6 +33,9 @@ device:
     - [0x06, 0x49, 0x01]
     - [0x06, 0x8D, 0x01]
 
+  # Sent when the daemon stops: undo 0x8D 0x01 so the GameDAC's own EQ menu works again.
+  device_shutdown:
+    - [0x06, 0x8D, 0x00]
 
   status:
     request: 0x06
