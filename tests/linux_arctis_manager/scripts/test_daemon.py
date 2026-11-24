@@ -6,6 +6,8 @@ from unittest.mock import call, patch
 import pytest
 
 from linux_arctis_manager.scripts.daemon import (
+    EXIT_ALREADY_RUNNING,
+    _is_lam_daemon,
     _is_running,
     _pid_file,
     _read_existing_pid,
@@ -18,6 +20,8 @@ from linux_arctis_manager.scripts.daemon import (
 @pytest.fixture
 def pid_dir(tmp_path, monkeypatch):
     monkeypatch.setenv('XDG_RUNTIME_DIR', str(tmp_path))
+    # Tests use a made-up PID; treat it as a lam-daemon unless a test says otherwise.
+    monkeypatch.setattr('linux_arctis_manager.scripts.daemon._is_lam_daemon', lambda pid: True)
     return tmp_path
 
 
@@ -109,7 +113,40 @@ def test_check_single_instance_exits_when_running_no_replace(pid_dir):
     (pid_dir / 'lam-daemon.pid').write_text('9999')
     with patch('os.kill'), pytest.raises(SystemExit) as exc_info:
         check_single_instance(replace=False)
-    assert exc_info.value.code == 1
+    assert exc_info.value.code == EXIT_ALREADY_RUNNING
+
+
+def test_check_single_instance_ignores_pid_reused_by_other_process(pid_dir, monkeypatch):
+    (pid_dir / 'lam-daemon.pid').write_text('9999')
+    monkeypatch.setattr('linux_arctis_manager.scripts.daemon._is_lam_daemon', lambda pid: False)
+    with patch('os.kill'):
+        check_single_instance(replace=False)  # must not exit
+
+
+def test_check_single_instance_ignores_own_pid(pid_dir):
+    (pid_dir / 'lam-daemon.pid').write_text(str(os.getpid()))
+    check_single_instance(replace=False)  # must not exit
+
+
+# --- _is_lam_daemon ---
+
+def test_is_lam_daemon_matches_cmdline():
+    with patch('linux_arctis_manager.scripts.daemon.Path') as mock_path:
+        mock_path.return_value.read_bytes.return_value = b'/usr/bin/python3\x00/home/u/.local/bin/lam-daemon\x00'
+        assert _is_lam_daemon(1234) is True
+        mock_path.assert_called_once_with('/proc/1234/cmdline')
+
+
+def test_is_lam_daemon_rejects_other_process():
+    with patch('linux_arctis_manager.scripts.daemon.Path') as mock_path:
+        mock_path.return_value.read_bytes.return_value = b'/usr/bin/firefox\x00'
+        assert _is_lam_daemon(1234) is False
+
+
+def test_is_lam_daemon_assumes_true_when_unreadable():
+    with patch('linux_arctis_manager.scripts.daemon.Path') as mock_path:
+        mock_path.return_value.read_bytes.side_effect = PermissionError
+        assert _is_lam_daemon(1234) is True
 
 
 def test_check_single_instance_sends_sigterm_on_replace(pid_dir):

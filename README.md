@@ -289,6 +289,7 @@ sudo pacman -Rns linux-arctis-manager
 ## ⚠️ Troubleshooting
 
 - App or headset becomes unresponsive: `systemctl --user restart --now arctis-manager`
+- `arctis-manager.service: Start request repeated too quickly`: the daemon failed several times in a row and systemd stopped retrying. Check why with `journalctl --user -u arctis-manager -b`, then run `systemctl --user reset-failed arctis-manager && systemctl --user start arctis-manager` (opening the GUI does this for you).
 - Newly supported device does not appear after an update:
   - Manual install/Distrobox: `lam-cli setup`
   - AUR: `lam-cli setup --rules-path /usr/lib/udev/rules.d/91-steelseries-arctis.rules`

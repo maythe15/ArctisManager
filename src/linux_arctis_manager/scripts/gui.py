@@ -49,7 +49,8 @@ def main():
     if not args.no_enforce_systemd and not args.demo:
         from linux_arctis_manager.systemd import ensure_systemd_unit
 
-        ensure_systemd_unit(True)
+        if not ensure_systemd_unit(True):
+            logging.getLogger('lam-gui').warning('The Arctis Manager daemon could not be started; the app will connect once it runs.')
 
     timer = QTimer()
     timer.timeout.connect(lambda: None)
