@@ -78,7 +78,7 @@ lam-gui
 - Profiles can save a named profile and load it again.
 - Settings shows setup and service state clearly.
 
-On the Nova Pro Wireless, check the Equalizer page: switching the preset chips (Flat, Bass Boost, Focus, Smiley, Custom) should change the sound, and with Custom selected, moving a band should audibly boost or cut that range. With a fixed preset selected, the graph should be dimmed and not editable. Note whether the preset names match what the base station shows when the daemon is stopped, and whether the curves the app draws for Bass Boost, Focus and Smiley match the station's own EQ display (they are taken from HeadsetControl's Nova 7 presets).
+On the Nova Pro Wireless, check the Equalizer page: switching the preset chips (Flat, Bass Boost, Focus, Smiley, Custom) should change the sound, and with Custom selected, moving a band should audibly boost or cut that range. With a fixed preset selected, the graph should be dimmed and not editable. Note whether the preset names match what the base station shows when the daemon is stopped, and whether the curves the app draws for Bass Boost and Smiley match the station's own EQ display (they are taken from HeadsetControl's Nova 7 presets; Focus has been matched against the station). The station only reports the preset number, so a mismatched curve has to be read off its display, e.g. by recreating it in Custom.
 
 Do not treat Microphone routing, parametric/software EQ, noise suppression, app auto-switching, or PipeWire-native routing as complete yet. Those are planned or future areas unless the GUI says otherwise.
 
