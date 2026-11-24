@@ -1,5 +1,4 @@
 import asyncio
-import itertools
 import json
 import logging
 
@@ -166,11 +165,12 @@ class ArctisManagerDbusSettingsService(ServiceInterface):
 
         if device_config and device_settings:
             settings.update({'device': device_settings.settings})
+            # 'section' is the YAML settings section, so clients can group controls
+            # (e.g. an equalizer page) without hardcoding setting names.
             settings['settings_config'].update({
-                config.name: config.to_dict()
-                for config in list(itertools.chain.from_iterable(
-                    device_config.settings.values()
-                ))
+                config.name: {**config.to_dict(), 'section': section}
+                for section, configs in device_config.settings.items()
+                for config in configs
             })
 
         return json.dumps(settings)

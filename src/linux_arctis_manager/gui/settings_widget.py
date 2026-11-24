@@ -22,7 +22,19 @@ class QSettingsWidget(QWidget):
     settings: dict[str, int|bool|str]
     settings_config: dict[str, ConfigSetting]
 
-    def __init__(self, parent: QWidget, i18n_section_name: str, dbus_settings_section: str):
+    def __init__(
+        self,
+        parent: QWidget,
+        i18n_section_name: str,
+        dbus_settings_section: str,
+        setting_filter: Callable[[dict], bool] | None = None,
+        on_change: Callable[[str, int|str|bool], None] | None = None,
+        show_title: bool = True,
+    ):
+        '''
+        setting_filter: receives each setting's settings_config entry; only settings it accepts are shown.
+        on_change: called with (name, value) instead of sending the change over D-Bus.
+        '''
         super().__init__(parent)
 
         layout = QVBoxLayout()
@@ -31,10 +43,14 @@ class QSettingsWidget(QWidget):
         layout.setSpacing(10)
         self.setLayout(layout)
 
-        title = I18n.get_instance().translate('ui', i18n_section_name)
-        title_widget = QLabel(title)
-        title_widget.setObjectName('settingsSectionTitle')
-        layout.addWidget(title_widget)
+        if show_title:
+            title = I18n.get_instance().translate('ui', i18n_section_name)
+            title_widget = QLabel(title)
+            title_widget.setObjectName('settingsSectionTitle')
+            layout.addWidget(title_widget)
+
+        self.setting_filter = setting_filter
+        self.on_change = on_change
 
         self.main_layout = QVBoxLayout()
         self.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -89,6 +105,12 @@ class QSettingsWidget(QWidget):
                 DbusWrapper.request_list_options(self.settings_config[config_name].options_source, self.sig_list_received)
 
         settings: dict[str, int|bool|str]|None = new_settings.get(self.dbus_settings_section, None)
+        if settings is not None and self.setting_filter is not None:
+            raw_config = new_settings.get('settings_config', {})
+            settings = {
+                name: value for name, value in settings.items()
+                if name in raw_config and self.setting_filter(raw_config[name])
+            }
         if settings is None or settings == self.settings:
             return
 
@@ -109,6 +131,10 @@ class QSettingsWidget(QWidget):
         dbus_value = value
         if config.type == SettingType.TOGGLE:
             dbus_value = config.values.get('on', True) if value else config.values.get('off', False)
+
+        if self.on_change is not None:
+            self.on_change(config.name, dbus_value)
+            return
 
         from linux_arctis_manager.gui.dbus_wrapper import DbusWrapper
 

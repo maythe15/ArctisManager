@@ -1,3 +1,6 @@
+import re
+from typing import Any
+
 from linux_arctis_manager.audio_endpoints import (ASSIGNABLE_MIX_GROUPS,
                                                   VIRTUAL_AUDIO_ENDPOINTS,
                                                   VIRTUAL_SINK_ENDPOINTS,
@@ -1025,4 +1028,142 @@ def demo_settings() -> dict:
             },
         ],
         'settings_config': {},
+    }
+
+
+EQUALIZER_SECTION_PREFIX = 'equalizer'
+EQUALIZER_SCALE_TICKS = 4
+
+
+def is_equalizer_setting(config: object) -> bool:
+    """A device setting belongs on the Equalizer page when its YAML section is `equalizer*`."""
+    return isinstance(config, dict) and str(config.get('section', '')).startswith(EQUALIZER_SECTION_PREFIX)
+
+
+def is_equalizer_band(config: object) -> bool:
+    """Band gains are the sliders of an equalizer section; its other settings (presets) are controls."""
+    return isinstance(config, dict) and is_equalizer_setting(config) and config.get('type') == 'slider'
+
+
+def _int_or(value: object, fallback: int) -> int:
+    try:
+        return int(float(value))  # pyright: ignore[reportArgumentType]
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _compact_level_label(label: str) -> str:
+    """'+5.0 dB' -> '+5 dB', '0.0 dB' -> '0 dB'; other labels are kept as they are."""
+    return re.sub(r'(\d)\.0(?!\d)', r'\1', label)
+
+
+def _equalizer_value_label(config: dict, value: int) -> str:
+    values_mapping = config.get('values_mapping', {})
+    if isinstance(values_mapping, dict):
+        mapped = values_mapping.get(str(value))
+        if mapped is not None:
+            return _compact_level_label(str(mapped))
+    return str(value)
+
+
+def _equalizer_scale(config: dict) -> list[dict[str, str | int]]:
+    minimum = _int_or(config.get('min'), 0)
+    maximum = _int_or(config.get('max'), 100)
+    step = max(1, _int_or(config.get('step'), 1))
+    if maximum <= minimum:
+        return [{'value': minimum, 'label': _equalizer_value_label(config, minimum)}]
+
+    ticks: list[dict[str, str | int]] = []
+    for index in range(EQUALIZER_SCALE_TICKS + 1):
+        raw = minimum + (maximum - minimum) * index / EQUALIZER_SCALE_TICKS
+        value = min(minimum + round((raw - minimum) / step) * step, maximum)
+        if ticks and ticks[-1]['value'] == value:
+            continue
+        ticks.append({'value': value, 'label': _equalizer_value_label(config, value)})
+    return ticks
+
+
+def _equalizer_baseline(config: dict, minimum: int, maximum: int) -> float:
+    """The neutral band level: the value labelled 0 (e.g. '0.0 dB'), or the middle of the range."""
+    values_mapping = config.get('values_mapping', {})
+    if isinstance(values_mapping, dict):
+        for value, label in values_mapping.items():
+            if re.match(r'^[+-]?0+(\.0+)?(\s|$)', str(label).strip()):
+                return _int_or(value, minimum)
+    return (minimum + maximum) / 2
+
+
+def _custom_preset_hint(controls: list[str], device_settings: dict, settings_config: dict) -> str:
+    """
+    Some devices only apply band gains while a "custom" preset is selected. When a preset control
+    offers such a value and another one is active, say so rather than silently ignoring the bands.
+    """
+    for name in controls:
+        config = settings_config.get(name, {})
+        values_mapping = config.get('values_mapping', {}) if isinstance(config, dict) else {}
+        if not isinstance(values_mapping, dict):
+            continue
+        custom_values = [str(key) for key, label in values_mapping.items() if str(label).lower() == 'custom']
+        if custom_values and str(device_settings.get(name)) not in custom_values:
+            return 'Band gains apply while the Custom preset is selected.'
+    return ''
+
+
+def equalizer_model(settings: dict | None) -> dict:
+    """Presentation model of the Equalizer page, built from the D-Bus settings payload."""
+    settings = settings or {}
+    device_settings = settings.get('device', {})
+    settings_config = settings.get('settings_config', {})
+    if not isinstance(device_settings, dict):
+        device_settings = {}
+    if not isinstance(settings_config, dict):
+        settings_config = {}
+
+    controls: list[str] = []
+    bands: list[dict[str, Any]] = []
+    scale: list[dict[str, str | int]] = []
+    baseline: float | None = None
+    for name, config in settings_config.items():
+        if name not in device_settings or not is_equalizer_setting(config):
+            continue
+        if not is_equalizer_band(config):
+            controls.append(name)
+            continue
+
+        minimum = _int_or(config.get('min'), 0)
+        maximum = _int_or(config.get('max'), 100)
+        value = min(max(_int_or(device_settings[name], minimum), minimum), maximum)
+        bands.append({
+            'name': name,
+            'label': str(config.get('band_label') or len(bands) + 1),
+            'min': minimum,
+            'max': maximum,
+            'step': max(1, _int_or(config.get('step'), 1)),
+            'default': _int_or(config.get('default_value'), (minimum + maximum) // 2),
+            'value': value,
+            'value_label': _equalizer_value_label(config, value),
+            'value_labels': {
+                level: _equalizer_value_label(config, level)
+                for level in range(minimum, maximum + 1, max(1, _int_or(config.get('step'), 1)))
+            },
+        })
+        if not scale:
+            scale = _equalizer_scale(config)
+            baseline = _equalizer_baseline(config, minimum, maximum)
+
+    if not device_settings:
+        empty_message = 'Connect a supported headset to show its equalizer.'
+    elif not controls and not bands:
+        empty_message = 'The connected headset does not expose equalizer controls.'
+    else:
+        empty_message = ''
+
+    return {
+        'available': bool(controls or bands),
+        'controls': controls,
+        'bands': bands,
+        'scale': scale,
+        'baseline': baseline,
+        'hint': _custom_preset_hint(controls, device_settings, settings_config) if bands else '',
+        'empty_message': empty_message,
     }

@@ -33,7 +33,7 @@ The response has seven sections:
 - `profiles`: available and active named profiles for the connected device.
 - `audio_endpoints`: virtual endpoint catalog plus current PulseAudio/PipeWire-pulse state.
 - `application_routes`: active application playback streams and their current output route.
-- `settings_config`: the definition for each setting, defining type, default_value and other arguments depending on the type. See **YAML's device.settings.[section].[setting] types**.
+- `settings_config`: the definition for each setting, defining type, default_value and other arguments depending on the type. See **YAML's device.settings.[section].[setting] types**. Device settings also carry `section`, the YAML settings section they belong to (e.g. `microphone`, `equalizer`), so clients can group them.
 
 The clients shouldn't hard-core the settings, but read them and parse them depending on the `settings_config` section.
 
@@ -113,6 +113,7 @@ The clients shouldn't hard-core the settings, but read them and parse them depen
         },
         "slider_setting": {
             "type": "slider",
+            "section": "microphone",
             "default_value": 10,
             "min": 1,
             "max": 10,

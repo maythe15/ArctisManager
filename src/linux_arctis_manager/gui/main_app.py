@@ -12,6 +12,8 @@ from linux_arctis_manager.audio_endpoints import (VIRTUAL_AUDIO_ENDPOINTS,
                                                   VIRTUAL_SINK_ENDPOINTS)
 from linux_arctis_manager.gui.base_app import QBaseDesktopApp
 from linux_arctis_manager.gui.main_app_proto_widget import QMainAppProtoWidget
+from linux_arctis_manager.gui.qt_widgets.q_equalizer import QEqualizerGraph
+from linux_arctis_manager.gui.settings_widget import QSettingsWidget
 from linux_arctis_manager.gui.status_widget import QStatusWidget
 from linux_arctis_manager.gui.ui_utils import get_icon_pixmap
 from linux_arctis_manager.gui.view_models import (
@@ -26,7 +28,10 @@ from linux_arctis_manager.gui.view_models import (
     device_capability_summary,
     device_control_snapshot,
     endpoint_route_map,
+    equalizer_model,
     header_context_summary,
+    is_equalizer_band,
+    is_equalizer_setting,
     mix_group_assignments,
     mixer_levels,
     mixer_overview_summary,
@@ -36,7 +41,7 @@ from linux_arctis_manager.gui.view_models import (
 )
 from linux_arctis_manager.i18n import I18n
 
-PanelName = Literal['dashboard', 'mixer', 'device', 'routing', 'profiles', 'settings']
+PanelName = Literal['dashboard', 'mixer', 'equalizer', 'device', 'routing', 'profiles', 'settings']
 
 
 class QMainApp(QBaseDesktopApp):
@@ -87,11 +92,26 @@ class QMainApp(QBaseDesktopApp):
         self._refresh_dashboard_settings({})
         self._refresh_dashboard_control_surface()
 
-        if self.dbus_wrapper:
-            from linux_arctis_manager.gui.settings_widget import QSettingsWidget
+        # Preset (non-band) equalizer controls. Built in demo mode too, where changes stay local.
+        self.equalizer_controls_widget = QSettingsWidget(
+            self.equalizer_controls_card,
+            'equalizer',
+            'device',
+            setting_filter=lambda config: is_equalizer_setting(config) and not is_equalizer_band(config),
+            on_change=None if self.dbus_wrapper else self._apply_local_setting,
+            show_title=False,
+        )
+        self.equalizer_controls_card.layout().addWidget(self.equalizer_controls_widget)
+        self._refresh_equalizer({})
 
+        if self.dbus_wrapper:
             self.general_settings_widget = QSettingsWidget(self.settings_page, 'general', 'general')
-            self.device_settings_widget = QSettingsWidget(self.device_settings_card, 'device', 'device')
+            self.device_settings_widget = QSettingsWidget(
+                self.device_settings_card,
+                'device',
+                'device',
+                setting_filter=lambda config: not is_equalizer_setting(config),
+            )
             self.settings_page_content_layout.addWidget(self.general_settings_widget)
             self.device_settings_card.layout().addWidget(self.device_settings_widget)
             self.dbus_wrapper.sig_status.connect(self.status_widget.update_status)
@@ -180,6 +200,7 @@ class QMainApp(QBaseDesktopApp):
         self.pages: dict[PanelName, QWidget] = {
             'dashboard': self._build_dashboard_page(),
             'mixer': self._build_mixer_page(),
+            'equalizer': self._build_equalizer_page(),
             'device': self._build_device_page(),
             'routing': self._build_routing_page(),
             'profiles': self._build_profiles_page(),
@@ -189,6 +210,7 @@ class QMainApp(QBaseDesktopApp):
         self.page_titles: dict[PanelName, tuple[str, str]] = {
             'dashboard': ('Dashboard', 'Current device health and active control surface.'),
             'mixer': ('Mixer', 'Multi-channel outputs for game, chat, media, aux, and microphone.'),
+            'equalizer': ('Equalizer', 'Hardware EQ presets and band gains stored on the headset.'),
             'device': ('Device', 'Hardware controls exposed by the connected headset configuration.'),
             'routing': ('Routing', 'Virtual endpoints today, per-app routing prepared for native PipeWire work.'),
             'profiles': ('Profiles', 'Per-device profiles and future app-aware switching.'),
@@ -223,6 +245,7 @@ class QMainApp(QBaseDesktopApp):
         nav_items: list[tuple[PanelName, str]] = [
             ('dashboard', 'Dashboard'),
             ('mixer', 'Mixer'),
+            ('equalizer', 'Equalizer'),
             ('device', 'Device'),
             ('routing', 'Routing'),
             ('profiles', 'Profiles'),
@@ -457,6 +480,40 @@ class QMainApp(QBaseDesktopApp):
         for (group, channel), button in self.mix_group_buttons.items():
             button.setChecked(assignments.get(channel) == group)
 
+    def _build_equalizer_page(self) -> QWidget:
+        page, layout = self._scroll_page()
+
+        self.equalizer_empty_label = self._muted_label('Connect a supported headset to show its equalizer.')
+        layout.addWidget(self.equalizer_empty_label)
+
+        self.equalizer_controls_card = self._card('Preset')
+        layout.addWidget(self.equalizer_controls_card)
+
+        self.equalizer_bands_card = self._card('Band Gains')
+        self.equalizer_graph = QEqualizerGraph()
+        self.equalizer_graph.band_changed.connect(self._on_equalizer_band_changed)
+        self.equalizer_bands_card.layout().addWidget(self.equalizer_graph)
+
+        footer = QHBoxLayout()
+        footer.setSpacing(12)
+        self.equalizer_hint_label = self._muted_label('')
+        self.equalizer_hint_label.setObjectName('equalizerHint')
+        footer.addWidget(self.equalizer_hint_label, 1)
+        self.equalizer_flat_button = QPushButton('Reset to flat')
+        self.equalizer_flat_button.setObjectName('secondaryAction')
+        self.equalizer_flat_button.clicked.connect(self._on_equalizer_flat_clicked)
+        self.equalizer_flat_button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        footer.addWidget(self.equalizer_flat_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        self.equalizer_bands_card.layout().addLayout(footer)
+
+        self.equalizer_bands_card.layout().addWidget(self._muted_label(
+            'Drag a band, scroll over it, or select it with the arrow keys and adjust with up/down. '
+            'Double-click a band to reset it.'
+        ))
+        layout.addWidget(self.equalizer_bands_card)
+
+        return page
+
     def _build_device_page(self) -> QWidget:
         page, layout = self._scroll_page()
 
@@ -499,6 +556,9 @@ class QMainApp(QBaseDesktopApp):
         self.device_settings_card.layout().addWidget(self._muted_label(
             'Controls appear when the connected headset exposes them over D-Bus.'
         ))
+        self.device_equalizer_note = self._muted_label('Equalizer presets and band gains are on the Equalizer page.')
+        self.device_equalizer_note.setVisible(False)
+        self.device_settings_card.layout().addWidget(self.device_equalizer_note)
         layout.addWidget(self.device_settings_card)
 
         return page
@@ -994,6 +1054,7 @@ class QMainApp(QBaseDesktopApp):
         self._refresh_profile_app_context(settings)
         self._refresh_device_capability_state(settings)
         self._refresh_device_control_snapshot(settings)
+        self._refresh_equalizer(settings)
         self._refresh_routing_overview(settings)
         self._refresh_mixer_settings(settings)
         self._refresh_routing_state(settings)
@@ -1147,6 +1208,51 @@ class QMainApp(QBaseDesktopApp):
             else:
                 self._set_state_label(state_label, 'Missing')
                 detail_label.setText('Virtual output not available yet.')
+
+    def _refresh_equalizer(self, settings: dict) -> None:
+        model = equalizer_model(settings)
+        self.equalizer_model = model
+
+        self.equalizer_empty_label.setText(model['empty_message'])
+        self.equalizer_empty_label.setVisible(not model['available'])
+        self.equalizer_controls_card.setVisible(bool(model['controls']))
+        self.equalizer_bands_card.setVisible(bool(model['bands']))
+        self.device_equalizer_note.setVisible(model['available'])
+        settings_config = settings.get('settings_config', {})
+        self.equalizer_controls_widget.update_settings({
+            'device': settings.get('device', {}),
+            'settings_config': {name: settings_config[name] for name in model['controls']},
+        })
+
+        self.equalizer_graph.set_bands(model['bands'], model['scale'], model['baseline'])
+        self.equalizer_hint_label.setText(model['hint'])
+        self.equalizer_hint_label.setVisible(bool(model['hint']))
+        baseline = model['baseline']
+        self.equalizer_flat_button.setEnabled(
+            baseline is not None and any(band['value'] != round(baseline) for band in model['bands'])
+        )
+
+    def _on_equalizer_band_changed(self, name: str, value: int) -> None:
+        if self.dbus_wrapper:
+            from linux_arctis_manager.gui.dbus_wrapper import DbusWrapper
+
+            DbusWrapper.change_setting(name, value)
+        else:
+            self._apply_local_setting(name, value)
+
+    def _on_equalizer_flat_clicked(self) -> None:
+        baseline = self.equalizer_model.get('baseline')
+        if baseline is None:
+            return
+        for band in self.equalizer_model['bands']:
+            if band['value'] != round(baseline):
+                self._on_equalizer_band_changed(str(band['name']), round(baseline))
+
+    def _apply_local_setting(self, name: str, value: int | str | bool) -> None:
+        '''Demo mode: apply a device setting change to the local sample data only.'''
+        device = dict(self.settings.get('device', {}))
+        device[name] = value
+        self.on_settings_received({**self.settings, 'device': device})
 
     def _refresh_device_capability_state(self, settings: dict) -> None:
         for capability in device_capability_summary(settings):
@@ -1681,6 +1787,9 @@ class QMainApp(QBaseDesktopApp):
                 color: #ffffff;
                 font-size: 13px;
                 font-weight: 700;
+            }
+            #equalizerHint {
+                color: #f8d775;
             }
             #setupTitle {
                 color: #f8fafc;

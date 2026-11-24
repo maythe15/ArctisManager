@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Device YAML: setting `update_sequence` entries can use `settings.<name>` tokens to include other settings' current values in one command.
 - Arctis Nova Pro Wireless: preset changes are followed by the station's save command (`0x06 0x09`), matching HeadsetControl.
 - Device YAML: `update_sequence` can be a list of commands, sent in order.
+- GUI: new Equalizer page. EQ presets moved off the Device page, and band gains are shown as a graphic equalizer: dB grid, response curve through the bands, and a draggable handle per band (scroll wheel, arrow keys and double-click-to-reset work too). Each drag sends one change, on release. A note appears when band gains have no effect because the Custom preset is not selected, and "Reset to flat" sets every band back to 0 dB. The page lists the settings of any `equalizer*` YAML section, so other devices get it from their YAML alone.
+- D-Bus: each device setting in `settings_config` carries its YAML `section`.
+- Device YAML: optional `band_label` for equalizer band sliders (e.g. `32 Hz`), shown under the band on the Equalizer page.
 
 ## Changed
 - Virtual output sinks (Game/Chat/Media/Aux) are now a single PipeWire node each: a null sink (with `monitor.channel-volumes=true`, so ChatMix still applies) whose monitor ports are linked straight to the headset with `pw-link`. This replaces the null sink plus `module-loopback`, going from 12 nodes to 4 for the four outputs, and graph tools such as qpwgraph now show an unbroken path from each app to the headset. When `pw-link` is not installed, or linking fails, the daemon falls back to `module-remap-sink` (two nodes per output, no visible link between them). Older setups are rebuilt automatically, and existing links are re-checked each time the daemon sets up the headset.

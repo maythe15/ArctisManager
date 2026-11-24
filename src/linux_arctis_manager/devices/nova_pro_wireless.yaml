@@ -143,6 +143,7 @@ device:
           - [0x06, 0x2e, 'value']
           - [0x06, 0x09] # Save to the station (as HeadsetControl does after a preset change)
       eq_band_1:
+        band_label: 32 Hz
         type: slider
         min: 0x00
         max: 0x28
@@ -194,6 +195,7 @@ device:
           0x28: '+10.0 dB'
         update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
       eq_band_2:
+        band_label: 64 Hz
         type: slider
         min: 0x00
         max: 0x28
@@ -204,6 +206,7 @@ device:
         values_mapping: *eq_band_db
         update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
       eq_band_3:
+        band_label: 125 Hz
         type: slider
         min: 0x00
         max: 0x28
@@ -214,6 +217,7 @@ device:
         values_mapping: *eq_band_db
         update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
       eq_band_4:
+        band_label: 250 Hz
         type: slider
         min: 0x00
         max: 0x28
@@ -224,6 +228,7 @@ device:
         values_mapping: *eq_band_db
         update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
       eq_band_5:
+        band_label: 500 Hz
         type: slider
         min: 0x00
         max: 0x28
@@ -234,6 +239,7 @@ device:
         values_mapping: *eq_band_db
         update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
       eq_band_6:
+        band_label: 1 kHz
         type: slider
         min: 0x00
         max: 0x28
@@ -244,6 +250,7 @@ device:
         values_mapping: *eq_band_db
         update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
       eq_band_7:
+        band_label: 2 kHz
         type: slider
         min: 0x00
         max: 0x28
@@ -254,6 +261,7 @@ device:
         values_mapping: *eq_band_db
         update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
       eq_band_8:
+        band_label: 4 kHz
         type: slider
         min: 0x00
         max: 0x28
@@ -264,6 +272,7 @@ device:
         values_mapping: *eq_band_db
         update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
       eq_band_9:
+        band_label: 8 kHz
         type: slider
         min: 0x00
         max: 0x28
@@ -274,6 +283,7 @@ device:
         values_mapping: *eq_band_db
         update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
       eq_band_10:
+        band_label: 16 kHz
         type: slider
         min: 0x00
         max: 0x28

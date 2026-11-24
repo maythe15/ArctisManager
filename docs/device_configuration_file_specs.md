@@ -106,6 +106,26 @@ device:
 
 ⚠️ The `status_parse` section of `media_mix` and `chat_mix` requires the values to be normalized between 0 and 100.
 
+### Equalizer sections
+
+Settings in a section whose name starts with `equalizer` (e.g. `equalizer`, `equalizer_bluetooth`) are shown on the GUI's Equalizer page instead of the Device page. In those sections, `slider` settings are drawn as the bands of a graphic equalizer, in YAML order, and every other setting (e.g. a preset `discrete_map`) is shown as a regular control above it. Band sliders can set an optional `band_label` (e.g. `band_label: 32 Hz`) shown under the band; band levels are labelled with the slider's `values_mapping` (e.g. `0x14: '0.0 dB'`), and the value mapped to `0 dB` is drawn as the neutral line. If a preset's `values_mapping` has a `custom` value, the page notes when another preset is selected, since band gains usually only apply to the custom preset.
+
+```yaml
+  settings:
+    equalizer:
+      eq_preset:
+        type: discrete_map
+        values_mapping: { 0x00: flat, 0x04: custom }
+        # ...
+      eq_band_1:
+        type: slider
+        band_label: 32 Hz
+        min: 0x00
+        max: 0x28
+        values_mapping: { 0x00: '-10.0 dB', 0x14: '0.0 dB', 0x28: '+10.0 dB' } # one label per step
+        # ...
+```
+
 ## YAML's device.settings.[section].[setting] types
 
 Linux Arctis Manager supports out of the box the following settings. Additional types need to be implemented in the code.
