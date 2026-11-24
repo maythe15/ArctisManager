@@ -1103,7 +1103,8 @@ def _equalizer_preset(name: str, config: dict, device_settings: dict) -> dict[st
     """
     A preset control is a `discrete_map` of an equalizer section with a `custom` value: the device
     applies the band gains only while Custom is selected, and plays a fixed curve otherwise.
-    `preset_bands` optionally gives that curve (band values, in band order) for each fixed preset.
+    `preset_bands` optionally gives that curve (band values, in band order) for each fixed preset;
+    `preset_bands_approximate: true` marks those curves as approximations.
     """
     if config.get('type') != 'discrete_map':
         return None
@@ -1134,6 +1135,7 @@ def _equalizer_preset(name: str, config: dict, device_settings: dict) -> dict[st
         'current_label': current['label'] if current else str(value),
         'options': options,
         'curve': [_int_or(level, 0) for level in curve] if isinstance(curve, list) else None,
+        'curve_approximate': config.get('preset_bands_approximate') is True,
     }
 
 
@@ -1196,7 +1198,13 @@ def equalizer_model(settings: dict | None) -> dict:
                 level = min(max(level, band['min']), band['max'])
                 band['value'] = level
                 band['value_label'] = band['value_labels'].get(level, str(level))
-            hint = f"{preset['current_label']} is a fixed preset. Select Custom to adjust the bands."
+            if preset['curve_approximate']:
+                hint = (
+                    f"{preset['current_label']} is a fixed preset; the curve shown is an approximation. "
+                    'Select Custom to adjust the bands.'
+                )
+            else:
+                hint = f"{preset['current_label']} is a fixed preset. Select Custom to adjust the bands."
         else:
             hint = (
                 f"{preset['current_label']} is a fixed preset; its curve is not known, so the bands show "

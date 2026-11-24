@@ -142,7 +142,9 @@ device:
         # Curves the GUI shows for the fixed presets (band values, 32 Hz..16 kHz). The
         # station doesn't report them, so Bass Boost and Smiley are the SteelSeries factory presets as
         # HeadsetControl defines them for the Arctis Nova 7 (dB converted to 0.5 dB steps), not yet
-        # verified on the Nova Pro. Focus was matched against the Nova Pro station's own EQ display.
+        # verified on the Nova Pro. Focus was matched by eye against the Nova Pro station's own EQ
+        # display. All of them are shown as approximations until confirmed.
+        preset_bands_approximate: true
         preset_bands:
           0x00: [0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14, 0x14] # 0 dB
           0x01: [0x1b, 0x1f, 0x1c, 0x16, 0x11, 0x11, 0x12, 0x12, 0x12, 0x12] # 3.5 5.5 4 1 -1.5 -1.5 -1 -1 -1 -1

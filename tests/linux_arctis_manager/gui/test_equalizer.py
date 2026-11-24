@@ -90,11 +90,22 @@ def test_equalizer_model_shows_and_locks_a_fixed_preset_curve():
     assert model['can_reset'] is False
     assert [band['value'] for band in model['bands']] == [0x1b, 0x1f, 0x1c, 0x16, 0x11, 0x11, 0x12, 0x12, 0x12, 0x12]
     assert model['bands'][1]['value_label'] == '+5.5 dB'
-    assert model['hint'] == 'Bass Boost is a fixed preset. Select Custom to adjust the bands.'
+    assert model['hint'] == (
+        'Bass Boost is a fixed preset; the curve shown is an approximation. Select Custom to adjust the bands.'
+    )
 
     flat = equalizer_model(_payload('nova_pro_wireless.yaml', {'eq_preset': 0x00, 'eq_band_1': 0x00}))
     assert flat['locked'] is True
     assert {band['value'] for band in flat['bands']} == {0x14}
+
+
+def test_equalizer_model_exact_preset_curves_have_a_plain_hint():
+    payload = _payload('nova_pro_wireless.yaml', {'eq_preset': 0x01})
+    del payload['settings_config']['eq_preset']['preset_bands_approximate']
+    model = equalizer_model(payload)
+
+    assert model['bands'][1]['value'] == 0x1f  # still the preset curve
+    assert model['hint'] == 'Bass Boost is a fixed preset. Select Custom to adjust the bands.'
 
 
 def test_equalizer_model_locks_a_preset_without_a_known_curve():
@@ -232,7 +243,7 @@ def test_equalizer_page_moves_eq_settings_off_the_device_page():
     assert chips[('eq_preset', 0x00)].isChecked()
     assert chips[('eq_preset', 0x00)].objectName() == 'presetChip'
     assert not window_app.equalizer_graph.isEnabled()
-    assert window_app.equalizer_hint_label.text() == 'Flat is a fixed preset. Select Custom to adjust the bands.'
+    assert window_app.equalizer_hint_label.text().startswith('Flat is a fixed preset; the curve shown is an approximation.')
     assert not window_app.equalizer_flat_button.isEnabled()
     # Reset to flat sits in the Band Gains card header, beside the title
     header = window_app.equalizer_bands_card.layout().itemAt(0).layout()
