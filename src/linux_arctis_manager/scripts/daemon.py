@@ -81,7 +81,8 @@ async def main_async():
     from linux_arctis_manager.dbus_service import DbusManager
     from linux_arctis_manager.scripts.dbus_awake import DbusAwake
 
-    logging.basicConfig(level=logging.INFO, format='[%(levelname)7s] %(name)20s: %(message)s')
+    # LAM_LOG_LEVEL=DEBUG also logs every raw packet the device sends
+    logging.basicConfig(level=os.environ.get('LAM_LOG_LEVEL', 'INFO').upper(), format='[%(levelname)7s] %(name)20s: %(message)s')
 
     logger = logging.getLogger('Daemon')
     logger.info('-------------------------------')

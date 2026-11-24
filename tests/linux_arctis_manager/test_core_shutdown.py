@@ -21,6 +21,12 @@ class FakeMonitor:
         self.stopped = True
 
 
+def _shutdown_config() -> DeviceConfiguration:
+    raw = YAML(typ='safe').load(DEVICES / 'nova_pro_wireless.yaml')
+    raw['device']['device_shutdown'] = [[0x06, 0x8d, 0x00]]
+    return DeviceConfiguration(raw)
+
+
 def _core(device_config: DeviceConfiguration | None, fail: bool = False) -> tuple[CoreEngine, list[list[int]]]:
     sent: list[list[int]] = []
     core = object.__new__(CoreEngine)
@@ -39,17 +45,13 @@ def _core(device_config: DeviceConfiguration | None, fail: bool = False) -> tupl
     return core, sent
 
 
-def test_nova_pro_configs_hand_eq_control_back_on_shutdown():
-    assert _config('nova_pro_wireless.yaml').device_shutdown == [[0x06, 0x8d, 0x00]]
-    assert _config('nova_pro_wired.yaml').device_shutdown == [[0x06, 0x8d, 0x00]]
-
-
 def test_config_without_device_shutdown_defaults_to_none():
     assert _config('arctis_7_plus.yaml').device_shutdown is None
+    assert _config('nova_pro_wireless.yaml').device_shutdown is None
 
 
 def test_stop_sends_device_shutdown_sequence():
-    core, sent = _core(_config('nova_pro_wireless.yaml'))
+    core, sent = _core(_shutdown_config())
 
     core.stop()
 
@@ -67,7 +69,7 @@ def test_stop_without_device_sends_nothing():
 
 
 def test_stop_survives_usb_errors_during_shutdown_sequence():
-    core, _ = _core(_config('nova_pro_wireless.yaml'), fail=True)
+    core, _ = _core(_shutdown_config(), fail=True)
 
     core.stop()
 

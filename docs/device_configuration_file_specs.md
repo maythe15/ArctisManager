@@ -25,9 +25,8 @@ device:
     - [0x06, 0xc3, 'settings.wireless_mode']      # Can accept also values from the settings (settings.NAME_OF_THE_SETTING)
     - ['status.request']                          # Can accept the special 'status.request' to send device.status.request's value
   device_shutdown: # OPTIONAL, commands sent when the daemon stops, to hand control back to the device
-                   # (same tokens as device_init). Use it to undo init commands the device remembers,
-                   # e.g. the Nova Pro's software-control mode that disables the base station's EQ menu.
-    - [0x06, 0x8d, 0x00]
+                   # (same tokens as device_init). Use it to undo init commands the device remembers.
+    - [0x06, 0x00]
   status:
     request: 0x06b0 # Message to be sent to request the device's status
     response_mapping: # A list of objects having

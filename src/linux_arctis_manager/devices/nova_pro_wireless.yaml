@@ -14,51 +14,19 @@ device:
   listen_interface_indexes: [4] # bInterfaceNumber
 
   device_init:
-    - [0x06, 0x20]
-    - [0x06, 0x20]
-    - [0x06, 0x10]
-    - [0x06, 0x10]
-    - [0x06, 0x10]
-    - [0x06, 0x3b] # Correction?
-    - [0x06, 0x8d, 'settings.sonar_mode']         # 0x01 = Sonar mode: station EQ bypassed and its EQ menu locked
-    - [0x06, 0x20]
-    - [0x06, 0x20]
-    - [0x06, 0x20]
-    - [0x06, 0x80]
-    - [0x06, 0x3b] # Correction?
-    # Burst of commands (device init?)
-    - [0x06, 0x8d, 'settings.sonar_mode']         # 0x01 = Sonar mode: station EQ bypassed and its EQ menu locked
-    - [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10'] # Custom EQ, 10 bands
-    - [0x06, 0xc3, 'settings.wireless_mode']      # 2.4G mode (0x00: speed, 0x01: range)
-    - [0x06, 0x2e, 'settings.eq_preset']          # Equalizer preset
-    - [0x06, 0xc1, 'settings.pm_shutdown']        # Set inactive time (to 30 minutes, see INACTIVE_TIME_MINUTES)
-    - [0x06, 0x85, 0x0a]
-    - [0x06, 0x37, 'settings.mic_volume']         # Mic volume 100% (01 (mute) - a0 (100%))
-    - [0x06, 0xb2]
-    - [0x06, 0x47, 0x64, 0x00, 0x64]
-    - [0x06, 0x83, 0x01]
-    - [0x06, 0x89, 0x00]
-    - [0x06, 0x27, 'settings.gain']               # Audio Gain (0x01: low, 0x02: high)
-    - [0x06, 0xb3, 0x00]
-    - [0x06, 0x39, 'settings.mic_side_tone']      # Set the sidetone to 0 (off) -> possible values: 0 (off 1 (low 2 (medium 3 (high)
-    - [0x06, 0xbf, 'settings.mic_led_brightness'] # Mute mic led brightness (out of 10)
-    - [0x06, 0x43, 0x01]
-    - [0x06, 0x69, 0x00]
-    - [0x06, 0x3b, 0x00]
-    - [0x06, 0x8d, 'settings.sonar_mode']         # 0x01 = Sonar mode: station EQ bypassed and its EQ menu locked
-    - [0x06, 0x49, 0x01]
-    - [0x06, 0xb7, 0x00]
-
-    # Another series of queries (perhaps for confirmation?)
-    - [0x06, 0xb7, 0x00]
-    - [0x06, 0xb7, 0x00]
-    - ['status.request']  # Get device status
-    - [0x06, 0x20, 0x00]
-    - [0x06, 0xb7, 0x00]
-  # Sent when the daemon stops: leave Sonar mode (0x8d 0x01, see the sonar_mode setting),
-  # which the station remembers, so its own EQ menu works again without the app.
-  device_shutdown:
-    - [0x06, 0x8d, 0x00]
+    # Only identified commands. The previous init (captured from the vendor software) also sent
+    # unidentified commands (0x20, 0x10, 0x3b, 0x80, 0x85, 0xb2, 0x47, 0x83, 0x89, 0xb3, 0x43,
+    # 0x69, 0x8d, 0xb7); one of them locked the base station's own EQ menu until a power cycle.
+    - [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
+    - [0x06, 0xc3, 'settings.wireless_mode']
+    - [0x06, 0x2e, 'settings.eq_preset']
+    - [0x06, 0xc1, 'settings.pm_shutdown']
+    - [0x06, 0x37, 'settings.mic_volume']
+    - [0x06, 0x27, 'settings.gain']
+    - [0x06, 0x39, 'settings.mic_side_tone']
+    - [0x06, 0xbf, 'settings.mic_led_brightness']
+    - [0x06, 0x49, 0x01] # Enable ChatMix (dial reported to the host)
+    - ['status.request']
   status:
     request: 0x06b0
     response_mapping:
@@ -151,22 +119,8 @@ device:
         default: 0x0a # 100%
         update_sequence: [0x06, 0xbf, 'value']
     equalizer:
-      # Taking control of the device (init sequence) disables the base station EQ menu,
-      # so the preset and custom bands are driven from here.
       # Bands: 0x14 = 0 dB, 0.5 dB per step, 0x00 = -10 dB, 0x28 = +10 dB.
       # Band gains only affect the sound while the Custom preset is selected.
-      # The base station bypasses its EQ entirely in Sonar mode (sonar_mode on), where EQ is
-      # expected to be done in software on the PC. Preset/bands only work with Sonar mode off.
-      sonar_mode:
-        type: toggle
-        values:
-          off: 0x00
-          on: 0x01
-          off_label: off
-          on_label: on
-        default: 0x00
-        update_sequence: [0x06, 0x8d, 'value']
-      # Preset/band commands match HeadsetControl's Nova Pro Wireless support.
       eq_preset:
         type: discrete_map
         values_mapping:
