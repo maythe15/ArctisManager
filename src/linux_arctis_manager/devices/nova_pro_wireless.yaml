@@ -28,9 +28,9 @@ device:
     - [0x06, 0x3b] # Correction?
     # Burst of commands (device init?)
     - [0x06, 0x8d, 0x01]
-    - [0x06, 0x33, 0x14, 0x14, 0x14]              # Equalizer with 3 bands
+    - [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10'] # Custom EQ, 10 bands
     - [0x06, 0xc3, 'settings.wireless_mode']      # 2.4G mode (0x00: speed, 0x01: range)
-    - [0x06, 0x2e, 0x00]                          # Set equalizer preset (0)
+    - [0x06, 0x2e, 'settings.eq_preset']          # Equalizer preset
     - [0x06, 0xc1, 'settings.pm_shutdown']        # Set inactive time (to 30 minutes, see INACTIVE_TIME_MINUTES)
     - [0x06, 0x85, 0x0a]
     - [0x06, 0x37, 'settings.mic_volume']         # Mic volume 100% (01 (mute) - a0 (100%))
@@ -146,6 +146,163 @@ device:
         max_label: perc_100
         default: 0x0a # 100%
         update_sequence: [0x06, 0xbf, 'value']
+    equalizer:
+      # Taking control of the device (init sequence) disables the base station EQ menu,
+      # so the preset and custom bands are driven from here.
+      # Bands: 0x14 = 0 dB, 0.5 dB per step, 0x00 = -10 dB, 0x28 = +10 dB.
+      # Band gains only affect the sound while the Custom preset is selected.
+      # Not yet verified on hardware: preset numbering and band frequencies.
+      eq_preset:
+        type: discrete_map
+        values_mapping:
+          0x00: flat
+          0x01: bass_boost
+          0x02: focus
+          0x03: smiley
+          0x04: custom
+        default: 0x00 # flat
+        update_sequence: [0x06, 0x2e, 'value']
+      eq_band_1:
+        type: slider
+        min: 0x00
+        max: 0x28
+        step: 1
+        min_label: -10 dB
+        max_label: +10 dB
+        default: 0x14 # 0 dB
+        values_mapping: &eq_band_db
+          0x00: '-10.0 dB'
+          0x01: '-9.5 dB'
+          0x02: '-9.0 dB'
+          0x03: '-8.5 dB'
+          0x04: '-8.0 dB'
+          0x05: '-7.5 dB'
+          0x06: '-7.0 dB'
+          0x07: '-6.5 dB'
+          0x08: '-6.0 dB'
+          0x09: '-5.5 dB'
+          0x0a: '-5.0 dB'
+          0x0b: '-4.5 dB'
+          0x0c: '-4.0 dB'
+          0x0d: '-3.5 dB'
+          0x0e: '-3.0 dB'
+          0x0f: '-2.5 dB'
+          0x10: '-2.0 dB'
+          0x11: '-1.5 dB'
+          0x12: '-1.0 dB'
+          0x13: '-0.5 dB'
+          0x14: '0.0 dB'
+          0x15: '+0.5 dB'
+          0x16: '+1.0 dB'
+          0x17: '+1.5 dB'
+          0x18: '+2.0 dB'
+          0x19: '+2.5 dB'
+          0x1a: '+3.0 dB'
+          0x1b: '+3.5 dB'
+          0x1c: '+4.0 dB'
+          0x1d: '+4.5 dB'
+          0x1e: '+5.0 dB'
+          0x1f: '+5.5 dB'
+          0x20: '+6.0 dB'
+          0x21: '+6.5 dB'
+          0x22: '+7.0 dB'
+          0x23: '+7.5 dB'
+          0x24: '+8.0 dB'
+          0x25: '+8.5 dB'
+          0x26: '+9.0 dB'
+          0x27: '+9.5 dB'
+          0x28: '+10.0 dB'
+        update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
+      eq_band_2:
+        type: slider
+        min: 0x00
+        max: 0x28
+        step: 1
+        min_label: -10 dB
+        max_label: +10 dB
+        default: 0x14 # 0 dB
+        values_mapping: *eq_band_db
+        update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
+      eq_band_3:
+        type: slider
+        min: 0x00
+        max: 0x28
+        step: 1
+        min_label: -10 dB
+        max_label: +10 dB
+        default: 0x14 # 0 dB
+        values_mapping: *eq_band_db
+        update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
+      eq_band_4:
+        type: slider
+        min: 0x00
+        max: 0x28
+        step: 1
+        min_label: -10 dB
+        max_label: +10 dB
+        default: 0x14 # 0 dB
+        values_mapping: *eq_band_db
+        update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
+      eq_band_5:
+        type: slider
+        min: 0x00
+        max: 0x28
+        step: 1
+        min_label: -10 dB
+        max_label: +10 dB
+        default: 0x14 # 0 dB
+        values_mapping: *eq_band_db
+        update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
+      eq_band_6:
+        type: slider
+        min: 0x00
+        max: 0x28
+        step: 1
+        min_label: -10 dB
+        max_label: +10 dB
+        default: 0x14 # 0 dB
+        values_mapping: *eq_band_db
+        update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
+      eq_band_7:
+        type: slider
+        min: 0x00
+        max: 0x28
+        step: 1
+        min_label: -10 dB
+        max_label: +10 dB
+        default: 0x14 # 0 dB
+        values_mapping: *eq_band_db
+        update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
+      eq_band_8:
+        type: slider
+        min: 0x00
+        max: 0x28
+        step: 1
+        min_label: -10 dB
+        max_label: +10 dB
+        default: 0x14 # 0 dB
+        values_mapping: *eq_band_db
+        update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
+      eq_band_9:
+        type: slider
+        min: 0x00
+        max: 0x28
+        step: 1
+        min_label: -10 dB
+        max_label: +10 dB
+        default: 0x14 # 0 dB
+        values_mapping: *eq_band_db
+        update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
+      eq_band_10:
+        type: slider
+        min: 0x00
+        max: 0x28
+        step: 1
+        min_label: -10 dB
+        max_label: +10 dB
+        default: 0x14 # 0 dB
+        values_mapping: *eq_band_db
+        update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10']
     power_management:
       pm_shutdown:
         type: discrete_map

@@ -2,7 +2,7 @@ import inspect
 import logging
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, ClassVar, Literal
+from typing import Any, Callable, ClassVar
 
 from ruamel.yaml import YAML
 
@@ -50,11 +50,11 @@ class ConfigSetting(JsonSerializable):
     name: str
     type: SettingType
     default_value: int|str|None
-    update_sequence: list[int|Literal['value']]
+    update_sequence: list[int|str]
 
     _js_exclude_fields: ClassVar[list[str]] = ['name', 'update_sequence']
 
-    def __init__(self, name: str, type: SettingType|str, default_value: int|str|None, update_sequence: list[int|Literal['value']] | None = None, **kwargs: Any):
+    def __init__(self, name: str, type: SettingType|str, default_value: int|str|None, update_sequence: list[int|str] | None = None, **kwargs: Any):
         self.name = name
         self.type = type if isinstance(type, SettingType) else SettingType(type)
         self.default_value = default_value
@@ -69,13 +69,28 @@ class ConfigSetting(JsonSerializable):
     def to_dict(self) -> dict[str, Any]:
         return { **super().to_dict(), **self.get_kwargs() }
 
-    def get_update_sequence(self, value: int) -> list[int]:
+    def get_update_sequence(self, value: int, resolve_setting: Callable[[str], int] | None = None) -> list[int]:
+        '''
+        Build the command bytes for this setting.
+
+        Tokens: integers are sent as is, 'value' is the new value of this setting and
+        'settings.<name>' is the current value of another setting of the same device
+        (for commands that carry several settings at once, e.g. EQ bands).
+        '''
         result = []
         for b in self.update_sequence:
             if isinstance(b, int):
                 result.append(b)
             elif b == 'value':
                 result.append(value)
+            elif isinstance(b, str) and b.startswith('settings.'):
+                setting_name = b.split('.', 1)[1]
+                if setting_name == self.name:
+                    result.append(value)
+                elif resolve_setting is None:
+                    raise Exception(f"Update sequence references setting '{setting_name}' but no resolver was given")
+                else:
+                    result.append(int(resolve_setting(setting_name)))
             else:
                 raise Exception(f"Invalid update sequence value: {b}")
 

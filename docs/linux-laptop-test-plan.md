@@ -78,7 +78,9 @@ lam-gui
 - Profiles can save a named profile and load it again.
 - Settings shows setup and service state clearly.
 
-Do not treat Microphone routing, EQ, noise suppression, app auto-switching, or PipeWire-native routing as complete yet. Those are planned or future areas unless the GUI says otherwise.
+On the Nova Pro Wireless, check the Equalizer settings on the Device page: switching the preset (Flat, Bass Boost, Focus, Smiley, Custom) should change the sound, and with Custom selected, moving a band slider should audibly boost or cut that range. Note whether the preset names match what the base station shows when the daemon is stopped.
+
+Do not treat Microphone routing, parametric/software EQ, noise suppression, app auto-switching, or PipeWire-native routing as complete yet. Those are planned or future areas unless the GUI says otherwise.
 
 ## 6. Per-App Routing Check
 

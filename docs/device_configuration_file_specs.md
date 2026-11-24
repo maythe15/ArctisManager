@@ -65,6 +65,10 @@ device:
     another_section:
       another_setting:
         type: ...
+        # 'settings.<name>' tokens are replaced with the current value of another setting of the
+        # same device, for commands carrying several settings at once (e.g. all EQ bands).
+        # A token naming the setting being changed resolves to its new value.
+        update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2']
 
   status_parse:               # Each status found in device.status.response_mapping[n] requires a counterpart in this section
     station_volume:

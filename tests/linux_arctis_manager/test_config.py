@@ -67,8 +67,9 @@ def test_config_parse():
 
     assert config.settings is not None
 
-    assert len(config.settings) == 4
+    assert len(config.settings) == 5
     assert 'headset' in config.settings
+    assert 'equalizer' in config.settings
     assert 'microphone' in config.settings
     assert 'power_management' in config.settings
     assert 'wireless' in config.settings
@@ -175,6 +176,39 @@ def test_config_setting_get_update_sequence_raises_on_invalid_token():
                       update_sequence=[0x01, 'bad_token'])  # type: ignore[list-item]
     with pytest.raises(Exception, match="Invalid update sequence value"):
         s.get_update_sequence(1)
+
+
+def test_config_setting_get_update_sequence_resolves_other_settings():
+    s = ConfigSetting(name='band_2', type='slider', default_value=0x14,
+                      update_sequence=[0x06, 0x33, 'settings.band_1', 'settings.band_2', 'settings.band_3'])
+    current = {'band_1': 0x10, 'band_2': 0x14, 'band_3': 0x18}
+    # The setting's own token uses the new value, not the stored one
+    assert s.get_update_sequence(0x1E, current.__getitem__) == [0x06, 0x33, 0x10, 0x1E, 0x18]
+
+
+def test_config_setting_get_update_sequence_settings_token_requires_resolver():
+    s = ConfigSetting(name='band_1', type='slider', default_value=0x14,
+                      update_sequence=[0x06, 0x33, 'settings.band_1', 'settings.band_2'])
+    with pytest.raises(Exception, match="no resolver"):
+        s.get_update_sequence(0x14)
+
+
+def test_nova_pro_wireless_exposes_equalizer():
+    yaml_file = Path(__file__).parents[2] / 'src' / 'linux_arctis_manager' / 'devices' / 'nova_pro_wireless.yaml'
+    config = DeviceConfiguration(YAML(typ='safe').load(yaml_file))
+    names = [s.name for s in config.settings['equalizer']]
+    assert names == ['eq_preset'] + [f'eq_band_{i}' for i in range(1, 11)]
+
+    defaults = {s.name: s.default_value for s in config.settings['equalizer']}
+    band_5 = next(s for s in config.settings['equalizer'] if s.name == 'eq_band_5')
+    # 0x28 = +10 dB on band 5, all other bands flat (0x14)
+    assert band_5.get_update_sequence(0x28, defaults.__getitem__) == [0x06, 0x33] + [0x14] * 4 + [0x28] + [0x14] * 5
+    assert band_5.values_mapping[0x00] == '-10.0 dB'
+    assert band_5.values_mapping[0x14] == '0.0 dB'
+    assert band_5.values_mapping[0x28] == '+10.0 dB'
+
+    preset = next(s for s in config.settings['equalizer'] if s.name == 'eq_preset')
+    assert preset.get_update_sequence(0x04) == [0x06, 0x2e, 0x04]
 
 
 # --- ConfigPadding ---

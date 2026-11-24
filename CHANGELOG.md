@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## Added
 - Configurable ChatMix groups: choose which output channels (Game, Chat, Media, Aux) follow the media or chat side of ChatMix from the Mixer page's Media Mix Group and Chat Mix Group cards. Saved as `mix_groups` in `general_settings.yaml` and exposed over D-Bus via `SetMixGroup` and the `mix_groups` settings field.
 
+- Arctis Nova Pro Wireless: Equalizer controls (preset picker plus 10 custom bands, -10 to +10 dB in 0.5 dB steps) in the device settings. The base station's own EQ menu is disabled while the daemon controls the headset, so it is now set from the app instead of always being forced to Flat. The saved preset and bands are re-applied when the headset is initialized. Preset numbering and band frequencies follow the Nova Pro Wired/Nova Elite configs and still need confirming on hardware.
+- Device YAML: setting `update_sequence` entries can use `settings.<name>` tokens to include other settings' current values in one command.
+
 ## Changed
 - Virtual output sinks (Game/Chat/Media/Aux) are now a single PipeWire node each: a null sink (with `monitor.channel-volumes=true`, so ChatMix still applies) whose monitor ports are linked straight to the headset with `pw-link`. This replaces the null sink plus `module-loopback`, going from 12 nodes to 4 for the four outputs, and graph tools such as qpwgraph now show an unbroken path from each app to the headset. When `pw-link` is not installed, or linking fails, the daemon falls back to `module-remap-sink` (two nodes per output, no visible link between them). Older setups are rebuilt automatically, and existing links are re-checked each time the daemon sets up the headset.
 

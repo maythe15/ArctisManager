@@ -370,7 +370,8 @@ class CoreEngine:
             return
 
         endpoint = self.get_command_endpoint_address()
-        self.send_command(config.get_update_sequence(value), endpoint, self.device_config.command_interface_index[1])
+        resolve_setting = self.device_settings.get if self.device_settings is not None else None
+        self.send_command(config.get_update_sequence(value, resolve_setting), endpoint, self.device_config.command_interface_index[1])
 
 
     def send_command(self, command: list[int], endpoint: int, control_interface_index: int = 0) -> None:
