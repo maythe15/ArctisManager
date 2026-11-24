@@ -73,6 +73,12 @@ device:
         # same device, for commands carrying several settings at once (e.g. all EQ bands).
         # A token naming the setting being changed resolves to its new value.
         update_sequence: [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2']
+      setting_with_several_commands:
+        type: ...
+        # A list of commands is sent in order (e.g. change, then save on the device).
+        update_sequence:
+          - [0x06, 0x2e, 'value']
+          - [0x06, 0x09]
 
   status_parse:               # Each status found in device.status.response_mapping[n] requires a counterpart in this section
     station_volume:

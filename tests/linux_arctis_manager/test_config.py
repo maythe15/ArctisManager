@@ -197,7 +197,7 @@ def test_nova_pro_wireless_exposes_equalizer():
     yaml_file = Path(__file__).parents[2] / 'src' / 'linux_arctis_manager' / 'devices' / 'nova_pro_wireless.yaml'
     config = DeviceConfiguration(YAML(typ='safe').load(yaml_file))
     names = [s.name for s in config.settings['equalizer']]
-    assert names == ['eq_preset'] + [f'eq_band_{i}' for i in range(1, 11)]
+    assert names == ['sonar_mode', 'eq_preset'] + [f'eq_band_{i}' for i in range(1, 11)]
 
     defaults = {s.name: s.default_value for s in config.settings['equalizer']}
     band_5 = next(s for s in config.settings['equalizer'] if s.name == 'eq_band_5')
@@ -208,7 +208,20 @@ def test_nova_pro_wireless_exposes_equalizer():
     assert band_5.values_mapping[0x28] == '+10.0 dB'
 
     preset = next(s for s in config.settings['equalizer'] if s.name == 'eq_preset')
-    assert preset.get_update_sequence(0x04) == [0x06, 0x2e, 0x04]
+    # Preset change is followed by the station's save command
+    assert preset.get_update_sequences(0x04) == [[0x06, 0x2e, 0x04], [0x06, 0x09]]
+
+    sonar = next(s for s in config.settings['equalizer'] if s.name == 'sonar_mode')
+    # Sonar mode bypasses the station EQ, so it must default to off
+    assert sonar.default_value == 0x00
+    assert sonar.get_update_sequences(0x01) == [[0x06, 0x8d, 0x01]]
+    assert [c for c in config.device_init or [] if c[:2] == [0x06, 0x8d]] == [[0x06, 0x8d, 'settings.sonar_mode']] * 3
+
+
+def test_config_setting_single_command_is_one_sequence():
+    s = ConfigSetting(name='vol', type='slider', default_value=0,
+                      update_sequence=[0x06, 0x37, 'value'])
+    assert s.get_update_sequences(0x05) == [[0x06, 0x37, 0x05]]
 
 
 # --- ConfigPadding ---

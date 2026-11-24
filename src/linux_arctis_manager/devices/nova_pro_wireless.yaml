@@ -20,14 +20,14 @@ device:
     - [0x06, 0x10]
     - [0x06, 0x10]
     - [0x06, 0x3b] # Correction?
-    - [0x06, 0x8d, 0x01]
+    - [0x06, 0x8d, 'settings.sonar_mode']         # 0x01 = Sonar mode: station EQ bypassed and its EQ menu locked
     - [0x06, 0x20]
     - [0x06, 0x20]
     - [0x06, 0x20]
     - [0x06, 0x80]
     - [0x06, 0x3b] # Correction?
     # Burst of commands (device init?)
-    - [0x06, 0x8d, 0x01]
+    - [0x06, 0x8d, 'settings.sonar_mode']         # 0x01 = Sonar mode: station EQ bypassed and its EQ menu locked
     - [0x06, 0x33, 'settings.eq_band_1', 'settings.eq_band_2', 'settings.eq_band_3', 'settings.eq_band_4', 'settings.eq_band_5', 'settings.eq_band_6', 'settings.eq_band_7', 'settings.eq_band_8', 'settings.eq_band_9', 'settings.eq_band_10'] # Custom EQ, 10 bands
     - [0x06, 0xc3, 'settings.wireless_mode']      # 2.4G mode (0x00: speed, 0x01: range)
     - [0x06, 0x2e, 'settings.eq_preset']          # Equalizer preset
@@ -45,7 +45,7 @@ device:
     - [0x06, 0x43, 0x01]
     - [0x06, 0x69, 0x00]
     - [0x06, 0x3b, 0x00]
-    - [0x06, 0x8d, 0x01]
+    - [0x06, 0x8d, 'settings.sonar_mode']         # 0x01 = Sonar mode: station EQ bypassed and its EQ menu locked
     - [0x06, 0x49, 0x01]
     - [0x06, 0xb7, 0x00]
 
@@ -55,9 +55,8 @@ device:
     - ['status.request']  # Get device status
     - [0x06, 0x20, 0x00]
     - [0x06, 0xb7, 0x00]
-  # Sent when the daemon stops. 0x8d 0x01 in device_init puts the base station in
-  # software-controlled mode (its own EQ menu is disabled, and the station remembers it);
-  # 0x8d 0x00 hands control back so the station's EQ works again without the app.
+  # Sent when the daemon stops: leave Sonar mode (0x8d 0x01, see the sonar_mode setting),
+  # which the station remembers, so its own EQ menu works again without the app.
   device_shutdown:
     - [0x06, 0x8d, 0x00]
   status:
@@ -156,7 +155,18 @@ device:
       # so the preset and custom bands are driven from here.
       # Bands: 0x14 = 0 dB, 0.5 dB per step, 0x00 = -10 dB, 0x28 = +10 dB.
       # Band gains only affect the sound while the Custom preset is selected.
-      # Not yet verified on hardware: preset numbering and band frequencies.
+      # The base station bypasses its EQ entirely in Sonar mode (sonar_mode on), where EQ is
+      # expected to be done in software on the PC. Preset/bands only work with Sonar mode off.
+      sonar_mode:
+        type: toggle
+        values:
+          off: 0x00
+          on: 0x01
+          off_label: off
+          on_label: on
+        default: 0x00
+        update_sequence: [0x06, 0x8d, 'value']
+      # Preset/band commands match HeadsetControl's Nova Pro Wireless support.
       eq_preset:
         type: discrete_map
         values_mapping:
@@ -166,7 +176,9 @@ device:
           0x03: smiley
           0x04: custom
         default: 0x00 # flat
-        update_sequence: [0x06, 0x2e, 'value']
+        update_sequence:
+          - [0x06, 0x2e, 'value']
+          - [0x06, 0x09] # Save to the station (as HeadsetControl does after a preset change)
       eq_band_1:
         type: slider
         min: 0x00

@@ -69,16 +69,30 @@ class ConfigSetting(JsonSerializable):
     def to_dict(self) -> dict[str, Any]:
         return { **super().to_dict(), **self.get_kwargs() }
 
-    def get_update_sequence(self, value: int, resolve_setting: Callable[[str], int] | None = None) -> list[int]:
+    def get_update_sequences(self, value: int, resolve_setting: Callable[[str], int] | None = None) -> list[list[int]]:
         '''
-        Build the command bytes for this setting.
+        Build every command to send for this setting, in order. update_sequence is either one
+        command ([0x06, 0x2e, 'value']) or a list of commands ([[0x06, 0x2e, 'value'], [0x06, 0x09]]).
+        '''
+        if self.update_sequence and all(isinstance(c, list) for c in self.update_sequence):
+            commands: list[list[int|str]] = self.update_sequence # pyright: ignore[reportAssignmentType]
+        else:
+            commands = [self.update_sequence]
 
+        return [self._build_command(c, value, resolve_setting) for c in commands]
+
+    def get_update_sequence(self, value: int, resolve_setting: Callable[[str], int] | None = None) -> list[int]:
+        '''Build the bytes of a single-command update_sequence.'''
+        return self._build_command(self.update_sequence, value, resolve_setting)
+
+    def _build_command(self, command: list[int|str], value: int, resolve_setting: Callable[[str], int] | None) -> list[int]:
+        '''
         Tokens: integers are sent as is, 'value' is the new value of this setting and
         'settings.<name>' is the current value of another setting of the same device
         (for commands that carry several settings at once, e.g. EQ bands).
         '''
         result = []
-        for b in self.update_sequence:
+        for b in command:
             if isinstance(b, int):
                 result.append(b)
             elif b == 'value':
